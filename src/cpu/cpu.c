@@ -41,10 +41,13 @@ void zcpu_bx(uint32_t value) {
     zcpu_branched = true;
 }
 
+void ztrace_pc(uint32_t pc);
+
 void zcpu_step(void) {
     if (g_cpu.halted) return;
 
     uint32_t pc = g_cpu.r[REG_PC];
+    ztrace_pc(pc);
 
     /* Trap HLE: chamada de API BREW via endereco magico */
     if (pc >= ZMEM_HLE_BASE) {

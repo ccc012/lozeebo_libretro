@@ -88,7 +88,24 @@ enum ztrap_id {
     ZT_SND_STOP      = 0x83, /* R1=voice                          */
     ZT_SND_SETVOLUME = 0x84, /* R1=voice R2=vol                   */
 
-    ZT_MAX = 0x100
+    /* ---- Suporte a modulos BREW reais ---- */
+
+    /* AEEHelperFuncs: slot N da tabela -> trap 0x100+N (117 slots) */
+    ZT_HELPER_BASE   = 0x100,
+    ZT_HELPER_END    = 0x1FF,
+
+    /* IShell real (ordem AEEShell.h): slot N -> trap 0x200+N (128) */
+    ZT_ISHELL_BASE   = 0x200,
+    ZT_ISHELL_END    = 0x27F,
+
+    /* Retorno de guest call (maquina de estados do boot) */
+    ZT_GUEST_RETURN  = 0x290,
+
+    /* Interfaces stub logadas (IDisplay real etc): 64 slots gener. */
+    ZT_STUB_BASE     = 0x300,
+    ZT_STUB_END      = 0x3FF,
+
+    ZT_MAX = 0x400
 };
 
 /* ---- Class IDs (convencao; valores reais viram da doc BREW) ---- */
@@ -137,5 +154,26 @@ void zbrew_set_file_base(const char *dir);
 
 /* Le o argumento N passado na stack (0 = primeiro arg apos R3) */
 uint32_t zbrew_stack_arg(int n);
+
+/* ---- helpers.c: AEEHelperFuncs para modulos BREW reais ---- */
+uint32_t zbrew_build_helper_table(void);   /* aloca e preenche; ret. endereco */
+void     zbrew_handle_helper(uint32_t id); /* dispatch trap 0x100+ */
+
+/* ---- boot.c: ciclo de vida do applet BREW real ---- */
+/* Inicia o boot: chama AEEMod_Load do modulo carregado.
+ * entry: endereco de entrada; clsid: applet a criar (0 = desconhecido) */
+void zboot_start(uint32_t entry, uint32_t applet_clsid);
+/* Trap ZT_GUEST_RETURN: avanca a maquina de estados */
+void zboot_on_guest_return(void);
+/* Chamado por frame: dispara timers vencidos (IShell_SetTimer) */
+void zboot_tick(uint32_t elapsed_ms);
+/* Dispatch dos traps do IShell real (0x200+) */
+void zbrew_handle_ishell_real(uint32_t id);
+/* Dispatch dos stubs logados (0x300+) */
+void zbrew_handle_stub(uint32_t id);
+/* Endereco do objeto IShell real (vtable ordem AEEShell.h) */
+uint32_t zboot_shell_obj(void);
+/* Estado atual do boot em texto (debug/log) */
+const char *zboot_state_name(void);
 
 #endif /* ZEEBO_BREW_H */

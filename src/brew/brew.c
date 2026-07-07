@@ -92,9 +92,20 @@ static void trap_dispatch(uint32_t addr) {
         g_brew_draw_color = 0xFF000000u | g_cpu.r[0];
         break;
 
+    /* ---- retorno de guest call: a maquina de estados decide o PC ---- */
+    case ZT_GUEST_RETURN:
+        zboot_on_guest_return();
+        return;
+
     /* ---- interfaces ---- */
     default:
-        if (id >= ZT_SHELL_ADDREF && id <= ZT_SHELL_GETUPTIMEMS)
+        if (id >= ZT_HELPER_BASE && id <= ZT_HELPER_END)
+            zbrew_handle_helper(id);
+        else if (id >= ZT_ISHELL_BASE && id <= ZT_ISHELL_END)
+            zbrew_handle_ishell_real(id);
+        else if (id >= ZT_STUB_BASE && id <= ZT_STUB_END)
+            zbrew_handle_stub(id);
+        else if (id >= ZT_SHELL_ADDREF && id <= ZT_SHELL_GETUPTIMEMS)
             zbrew_handle_shell(id);
         else if (id >= ZT_DISP_ADDREF && id <= ZT_DISP_BITBLT)
             zbrew_handle_display(id);
