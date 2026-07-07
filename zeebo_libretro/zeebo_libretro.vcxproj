@@ -20,9 +20,46 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\core\libretro.h" />
+    <ClInclude Include="..\src\core\libretro_core.h" />
+    <ClInclude Include="..\src\debug\log.h" />
+    <ClInclude Include="..\src\memory\memory.h" />
+    <ClInclude Include="..\src\cpu\cpu.h" />
+    <ClInclude Include="..\src\cpu\decode.h" />
+    <ClInclude Include="..\src\gpu\framebuffer.h" />
+    <ClInclude Include="..\src\audio\audio.h" />
+    <ClInclude Include="..\src\audio\audio_internal.h" />
+    <ClInclude Include="..\src\input\input.h" />
+    <ClInclude Include="..\src\brew\brew.h" />
+    <ClInclude Include="..\src\loader\mod_loader.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\core\libretro_core.c" />
+    <ClCompile Include="..\src\debug\log.c" />
+    <ClCompile Include="..\src\debug\disasm.c" />
+    <ClCompile Include="..\src\debug\trace.c" />
+    <ClCompile Include="..\src\memory\memory.c" />
+    <ClCompile Include="..\src\memory\heap.c" />
+    <ClCompile Include="..\src\cpu\cpu.c" />
+    <ClCompile Include="..\src\cpu\decode.c" />
+    <ClCompile Include="..\src\cpu\flags.c" />
+    <ClCompile Include="..\src\cpu\execute_arm.c" />
+    <ClCompile Include="..\src\cpu\execute_thumb.c" />
+    <ClCompile Include="..\src\gpu\framebuffer.c" />
+    <ClCompile Include="..\src\gpu\draw.c" />
+    <ClCompile Include="..\src\audio\audio.c" />
+    <ClCompile Include="..\src\audio\mixer.c" />
+    <ClCompile Include="..\src\audio\pcm.c" />
+    <ClCompile Include="..\src\input\input.c" />
+    <ClCompile Include="..\src\brew\brew.c" />
+    <ClCompile Include="..\src\brew\ishell.c" />
+    <ClCompile Include="..\src\brew\imemory.c" />
+    <ClCompile Include="..\src\brew\idisplay.c" />
+    <ClCompile Include="..\src\brew\ibitmap.c" />
+    <ClCompile Include="..\src\brew\ifile.c" />
+    <ClCompile Include="..\src\brew\isound.c" />
+    <ClCompile Include="..\src\loader\mod_loader.c" />
+    <ClCompile Include="..\src\loader\mif_parser.c" />
+    <ClCompile Include="..\src\loader\bar_parser.c" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
@@ -80,7 +117,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;_DEBUG;ZEEBOLIBRETRO_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_DEBUG;ZEEBOLIBRETRO_EXPORTS;_CRT_SECURE_NO_WARNINGS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <AdditionalIncludeDirectories>$(ProjectDir)\..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -97,7 +134,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;ZEEBOLIBRETRO_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;ZEEBOLIBRETRO_EXPORTS;_CRT_SECURE_NO_WARNINGS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <AdditionalIncludeDirectories>$(ProjectDir)\..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -112,7 +149,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;ZEEBOLIBRETRO_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;ZEEBOLIBRETRO_EXPORTS;_CRT_SECURE_NO_WARNINGS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <AdditionalIncludeDirectories>$(ProjectDir)\..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -129,7 +166,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;ZEEBOLIBRETRO_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;ZEEBOLIBRETRO_EXPORTS;_CRT_SECURE_NO_WARNINGS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <AdditionalIncludeDirectories>$(ProjectDir)\..\..\src\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
