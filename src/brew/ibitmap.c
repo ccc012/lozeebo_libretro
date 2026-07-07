@@ -1,0 +1,1 @@
+/* IBitmap - vazio por enquanto */
