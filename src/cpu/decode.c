@@ -1,0 +1,1 @@
+/* Decodificação - vazio por enquanto */

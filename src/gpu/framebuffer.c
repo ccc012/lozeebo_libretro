@@ -1,0 +1,1 @@
+/* Framebuffer - vazio por enquanto */

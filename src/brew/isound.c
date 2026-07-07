@@ -1,0 +1,1 @@
+/* ISound - vazio por enquanto */
