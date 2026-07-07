@@ -226,15 +226,19 @@ void retro_run(void) {
 
     poll_input();
 
-    if (g_game_loaded && !g_cpu.halted) {
-        zcpu_run(ZEEBO_INSTR_PER_FRAME);
+    if (g_game_loaded) {
+        /* timers do IShell podem "acordar" a CPU com um guest call */
+        zboot_tick(16);
+        if (!g_cpu.halted)
+            zcpu_run(ZEEBO_INSTR_PER_FRAME);
         zbrew_tick_ms(16);
     }
 
     /* Diagnostico: estado da CPU a cada 60 frames (1s) */
     if ((frame_count++ % 60) == 0) {
-        LOGI("frame %u: instrucoes=%llu PC=0x%08X halted=%d fb[0]=0x%08X",
-             frame_count, (unsigned long long)g_cpu.executed,
+        LOGI("frame %u: boot=%s instrucoes=%llu PC=0x%08X halted=%d fb[0]=0x%08X",
+             frame_count, zboot_state_name(),
+             (unsigned long long)g_cpu.executed,
              g_cpu.r[REG_PC], g_cpu.halted ? 1 : 0,
              zfb_pixels() ? zfb_pixels()[0] : 0);
     }

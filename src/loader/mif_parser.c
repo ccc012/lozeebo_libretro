@@ -8,7 +8,94 @@
 #include <string.h>
 #include <ctype.h>
 #include "mod_loader.h"
+#include "../brew/aee_ids.h"
 #include "../debug/log.h"
+
+/* Procura CLSIDs de applets conhecidos dentro de um arquivo */
+static uint32_t scan_file_for_clsid(const char *path) {
+    FILE *f = fopen(path, "rb");
+    unsigned char buf[8192];
+    size_t n, i, k;
+    if (!f) return 0;
+    n = fread(buf, 1, sizeof(buf), f);
+    fclose(f);
+    for (i = 0; i + 4 <= n; i++) {
+        uint32_t v = (uint32_t)buf[i] | ((uint32_t)buf[i+1] << 8) |
+                     ((uint32_t)buf[i+2] << 16) | ((uint32_t)buf[i+3] << 24);
+        for (k = 0; k < ZAEE_KNOWN_APPLET_COUNT; k++) {
+            if (v == ZAEE_KNOWN_APPLETS[k].clsid) {
+                LOGI("mif: applet '%s' (0x%08X) em %s",
+                     ZAEE_KNOWN_APPLETS[k].name, v, path);
+                return v;
+            }
+        }
+    }
+    return 0;
+}
+
+uint32_t zmif_find_applet_clsid(const char *mod_path) {
+    char candidate[1024];
+    uint32_t clsid;
+    const char *sep, *s1, *s2;
+
+    if (!mod_path) return 0;
+
+    /* 1. O proprio MOD costuma conter o CLSID (AEEAppInfo estatico) */
+    clsid = scan_file_for_clsid(mod_path);
+    if (clsid) return clsid;
+
+    /* 2. jogo.mif ao lado do MOD */
+    {
+        size_t len = strlen(mod_path);
+        const char *dot = strrchr(mod_path, '.');
+        if (dot && len < sizeof(candidate)) {
+            memcpy(candidate, mod_path, dot - mod_path);
+            strcpy(candidate + (dot - mod_path), ".mif");
+            clsid = scan_file_for_clsid(candidate);
+            if (clsid) return clsid;
+        }
+    }
+
+    /* 3. Convencao do dump: <raiz>/mod/<id>/x.mod -> <raiz>/mif/<id>.mif */
+    s1 = strrchr(mod_path, '/');
+    s2 = strrchr(mod_path, '\\');
+    sep = s1 > s2 ? s1 : s2;
+    if (sep) {
+        char dir[768];
+        size_t dlen = (size_t)(sep - mod_path);
+        if (dlen < sizeof(dir)) {
+            const char *id;
+            memcpy(dir, mod_path, dlen);
+            dir[dlen] = '\0';
+            s1 = strrchr(dir, '/');
+            s2 = strrchr(dir, '\\');
+            sep = s1 > s2 ? s1 : s2;
+            id = sep ? sep + 1 : dir;
+            if (sep) {
+                size_t plen = (size_t)(sep - dir);
+                char root[768];
+                if (plen < sizeof(root)) {
+                    /* remove o "mod" final do caminho */
+                    memcpy(root, dir, plen);
+                    root[plen] = '\0';
+                    s1 = strrchr(root, '/');
+                    s2 = strrchr(root, '\\');
+                    sep = s1 > s2 ? s1 : s2;
+                    if (sep) {
+                        snprintf(candidate, sizeof(candidate),
+                                 "%.*s%cmif%c%s.mif",
+                                 (int)(sep - root), root,
+                                 sep[0] == '/' ? '/' : '\\',
+                                 sep[0] == '/' ? '/' : '\\', id);
+                        clsid = scan_file_for_clsid(candidate);
+                        if (clsid) return clsid;
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
 
 bool zmif_parse_name(const char *mod_path, char *name_out, size_t maxlen) {
     char mif_path[512];

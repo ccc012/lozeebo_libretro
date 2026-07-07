@@ -1,4 +1,21 @@
-/* mod_loader.c - Carrega a ROM na memoria emulada e prepara a CPU */
+/* mod_loader.c - Carregador de modulos BREW (MOD)
+ *
+ * Formatos suportados (confirmados nas ROMs reais do Zeebo):
+ *
+ * 1. "BREW mod1" (magic "BREW" em +0x08 ou +0x48):
+ *      +0x00 branch ARM -> entry point
+ *      +0x04 branch ARM -> mod info
+ *      +0x08 "BREW"  +0x0C versao  +0x10 tam. header (0x40)
+ *      +0x1C code_size  +0x20 data_size  +0x24 bss_size
+ *    Codigo ROPI, base de link 0 -> VA == offset do arquivo.
+ *    Carregamos a imagem inteira em VA 0 e zeramos o BSS.
+ *
+ * 2. Binario ARM "cru" (Double Dragon, Family Pack, test ROMs):
+ *    entry no offset 0 (ou branch inicial), sem header.
+ *
+ * Em ambos: tabela AEEHelperFuncs gravada em [entry-4] (GET_HELPER)
+ * e nos slots de padding 0x1F0-0x1FC.
+ */
 #include <string.h>
 #include <stdio.h>
 #include "mod_loader.h"
@@ -7,36 +24,81 @@
 #include "../brew/brew.h"
 #include "../debug/log.h"
 
+static uint32_t rd32(const uint8_t *p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+/* Alvo de um branch ARM (B imm24) com PC dado */
+static uint32_t branch_target(uint32_t insn, uint32_t pc) {
+    int32_t imm = (int32_t)(insn << 8) >> 6; /* sign-extend imm24, <<2 */
+    return pc + 8 + (uint32_t)imm;
+}
+
 bool zmod_load(const void *data, size_t size, const char *path,
                zmod_info_t *out) {
-    if (!data || size == 0) {
+    const uint8_t *bytes = (const uint8_t *)data;
+    uint32_t hdr_off = 0;
+    bool has_brew_hdr = false;
+
+    if (!data || size < 8) {
         LOGE("zmod_load: sem dados");
         return false;
     }
-    if (size > ZMEM_RAM_SIZE - ZMEM_CODE_ENTRY) {
+    if (size > ZMEM_RAM_SIZE / 2) {
         LOGE("zmod_load: ROM grande demais (%u bytes)", (unsigned)size);
         return false;
     }
 
-    /* Copia o binario para 0x1000 */
-    if (!zmem_write_block(ZMEM_CODE_ENTRY, data, (uint32_t)size)) {
-        LOGE("zmod_load: falha ao copiar ROM para a memoria");
-        return false;
+    /* Detecta header BREW em 0x0 ou 0x40 */
+    if (size >= 0x10 && memcmp(bytes + 8, "BREW", 4) == 0) {
+        hdr_off = 0;
+        has_brew_hdr = true;
+    } else if (size >= 0x50 && memcmp(bytes + 0x48, "BREW", 4) == 0) {
+        hdr_off = 0x40;
+        has_brew_hdr = true;
     }
 
     memset(out, 0, sizeof(*out));
-    out->entry = ZMEM_CODE_ENTRY;
-    out->code_base = ZMEM_CODE_ENTRY;
-    out->code_size = (uint32_t)size;
     strncpy(out->name, "Zeebo Game", sizeof(out->name) - 1);
 
-    /* Tenta ler o nome do .mif ao lado da ROM */
+    /* Imagem inteira em VA 0 (base de link dos modulos BREW) */
+    if (!zmem_write_block(0, data, (uint32_t)size)) {
+        LOGE("zmod_load: falha ao copiar ROM");
+        return false;
+    }
+    out->code_base = 0;
+    out->code_size = (uint32_t)size;
+
+    if (has_brew_hdr) {
+        uint32_t hdr_size  = rd32(bytes + hdr_off + 0x10);
+        uint32_t code_size = rd32(bytes + hdr_off + 0x1C);
+        uint32_t data_size = rd32(bytes + hdr_off + 0x20);
+        uint32_t bss_size  = rd32(bytes + hdr_off + 0x24);
+
+        out->entry = hdr_off + branch_target(rd32(bytes + hdr_off), 0);
+
+        /* zera o BSS depois de codigo+dados */
+        if (bss_size > 0 && bss_size < ZMEM_RAM_SIZE / 2) {
+            uint32_t bss_start = hdr_off + hdr_size + code_size + data_size;
+            uint32_t i;
+            for (i = 0; i < bss_size; i++)
+                zmem_write8(bss_start + i, 0);
+            LOGI("mod1: BSS zerado em 0x%08X (%u bytes)", bss_start, bss_size);
+        }
+        LOGI("mod1: hdr=0x%X code=%u data=%u bss=%u entry=0x%08X",
+             hdr_off, code_size, data_size, bss_size, out->entry);
+    } else {
+        /* binario cru: entry no offset 0 */
+        out->entry = 0;
+        LOGI("mod cru: %u bytes, entry=0x00000000", out->code_size);
+    }
+
+    /* Nome e diretorio de assets */
     if (path) {
         char name[64];
         if (zmif_parse_name(path, name, sizeof(name)))
             strncpy(out->name, name, sizeof(out->name) - 1);
-
-        /* Diretorio da ROM vira a base do IFile */
         {
             char dir[512];
             const char *s1 = strrchr(path, '/');
@@ -50,14 +112,37 @@ bool zmod_load(const void *data, size_t size, const char *path,
         }
     }
 
-    /* Prepara a CPU:
-     *  PC = entry, SP = topo da stack
-     *  LR = trap de retorno (se o entry retornar, o applet acabou)
-     *  R0 = ponteiro do IShell (convencao AEEMod_Load(shell, ...)) */
+    /* CPU: SP no topo, LR provisorio (zboot_start define o resto) */
     zcpu_reset(out->entry, ZMEM_STACK_TOP, ZTRAP_ADDR(ZT_RETURN_APPLET));
-    g_cpu.r[0] = zbrew_shell_ptr();
 
-    LOGI("zmod_load: '%s' %u bytes em 0x%08X, entry 0x%08X",
-         out->name, out->code_size, out->code_base, out->entry);
+    /* Tabela de helpers AEE: [entry-4] = tabela, [entry-8] = 0,
+     * e slots de padding 0x1F0-0x1FC (se vazios) */
+    {
+        uint32_t table = zbrew_build_helper_table();
+        uint32_t slot;
+        if (out->entry >= 8) {
+            zmem_write32(out->entry - 4, table);
+            zmem_write32(out->entry - 8, 0);
+        }
+        for (slot = 0x1F0; slot <= 0x1FC; slot += 4) {
+            if (zmem_read32(slot) == 0)
+                zmem_write32(slot, table);
+        }
+        /* bootstrap do mirror em base 0 le helper/versao de [-4]/[-8] */
+        zmem_write32(0xFFFFFFFCu, table);
+        zmem_write32(0xFFFFFFF8u, 0);
+    }
+
+    /* CLSID do applet (MIF ao lado da ROM, ou tabela de conhecidos) */
+    {
+        uint32_t clsid = zmif_find_applet_clsid(path);
+        if (!clsid)
+            LOGW("zmod_load: CLSID do applet desconhecido - "
+                 "CreateInstance recebera 0");
+        zboot_start(out->entry, clsid);
+    }
+
+    LOGI("zmod_load: '%s' pronto (%u bytes, entry 0x%08X)",
+         out->name, out->code_size, out->entry);
     return true;
 }

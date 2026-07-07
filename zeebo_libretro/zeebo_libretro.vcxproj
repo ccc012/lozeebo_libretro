@@ -51,6 +51,8 @@
     <ClCompile Include="..\src\audio\pcm.c" />
     <ClCompile Include="..\src\input\input.c" />
     <ClCompile Include="..\src\brew\brew.c" />
+    <ClCompile Include="..\src\brew\helpers.c" />
+    <ClCompile Include="..\src\brew\boot.c" />
     <ClCompile Include="..\src\brew\ishell.c" />
     <ClCompile Include="..\src\brew\imemory.c" />
     <ClCompile Include="..\src\brew\idisplay.c" />

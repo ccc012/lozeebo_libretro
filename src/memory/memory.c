@@ -12,6 +12,10 @@ static uint8_t *g_heap  = NULL;
 static uint8_t *g_stack = NULL;
 static uint8_t *g_vram  = NULL;
 
+/* Pagina alta 0xFFFFFF00-0xFFFFFFFF: o bootstrap de modulos BREW le a
+ * tabela de helpers de [-4] (=0xFFFFFFFC) e a versao de [-8]. */
+static uint8_t g_highpage[256];
+
 /* Limita spam de log de acesso invalido */
 static uint32_t g_bad_access_count = 0;
 #define BAD_ACCESS_LOG_LIMIT 32
@@ -59,12 +63,18 @@ static uint8_t *translate(uint32_t addr) {
         return g_stack ? &g_stack[addr - ZMEM_STACK_BASE] : NULL;
     if (addr >= ZMEM_VRAM_BASE && addr < ZMEM_VRAM_BASE + ZMEM_VRAM_SIZE)
         return g_vram ? &g_vram[addr - ZMEM_VRAM_BASE] : NULL;
+    if (addr >= 0xFFFFFF00u)
+        return &g_highpage[addr - 0xFFFFFF00u];
     return NULL;
 }
+
+void ztrace_dump(void);
 
 static void log_bad_access(const char *what, uint32_t addr) {
     if (g_bad_access_count < BAD_ACCESS_LOG_LIMIT) {
         LOGW("memoria: %s invalido em 0x%08X", what, addr);
+        if (g_bad_access_count == 0)
+            ztrace_dump(); /* primeiro acesso ruim: mostra o caminho ate aqui */
         g_bad_access_count++;
         if (g_bad_access_count == BAD_ACCESS_LOG_LIMIT)
             LOGW("memoria: (limite de logs de acesso invalido atingido)");

@@ -29,6 +29,13 @@ bool zmod_load(const void *data, size_t size, const char *path,
 /* mif_parser.c: extrai o nome do jogo de um .mif ao lado da ROM */
 bool zmif_parse_name(const char *mod_path, char *name_out, size_t maxlen);
 
+/* mif_parser.c: descobre o CLSID do applet.
+ * Procura o .mif nas convencoes do dump Zeebo:
+ *   <raiz>/mod/<id>/jogo.mod  ->  <raiz>/mif/<id>.mif
+ * e tambem jogo.mif ao lado. Escaneia por CLSIDs de applets conhecidos;
+ * retorna 0 se nao encontrar. */
+uint32_t zmif_find_applet_clsid(const char *mod_path);
+
 /* bar_parser.c: enumeracao basica de recursos BAR (fase 2.3) */
 bool zbar_probe(const char *bar_path);
 
