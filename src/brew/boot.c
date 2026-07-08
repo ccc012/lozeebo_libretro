@@ -131,9 +131,10 @@ void zboot_start(uint32_t entry, uint32_t applet_clsid) {
     LOGI("boot: AEEMod_Load(shell=0x%08X, ph=0, ppMod=0x%08X) entry=0x%08X",
          g_shell_obj, g_ppmod, entry);
     g_state = BOOT_MOD_LOAD;
-    /* AEEMod_Load(IShell*, void* ph, IModule**) - R2 e R3 = ppMod
-     * (alguns AEEModGen leem de R2, outros de R3) */
-    guest_call(entry, g_shell_obj, 0, g_ppmod, g_ppmod);
+    /* AEEMod_Load(IShell*, void* ph, IModule**). Bootstraps de modulos
+     * reais variam a posicao dos args (o stub ROPI pode deslocar),
+     * entao duplicamos: shell em R0 e R1, ppMod em R2 e R3. */
+    guest_call(entry, g_shell_obj, g_shell_obj, g_ppmod, g_ppmod);
 }
 
 void zboot_on_guest_return(void) {
@@ -149,6 +150,26 @@ void zboot_on_guest_return(void) {
             g_state = BOOT_FAILED;
             g_cpu.halted = true;
             return;
+        }
+        /* Diagnostico: struct AEEMod = {vtbl, IShell*, ph, pfnModCrInst} */
+        LOGI("boot: AEEMod +0=0x%08X +4=0x%08X +8=0x%08X +12=0x%08X +16=0x%08X",
+             zmem_read32(g_module_obj), zmem_read32(g_module_obj + 4),
+             zmem_read32(g_module_obj + 8), zmem_read32(g_module_obj + 12),
+             zmem_read32(g_module_obj + 16));
+        /* Se o slot do IShell nao aponta para nosso objeto, corrige
+         * (bootstraps ROPI variam a ordem dos args do AEEMod_Load) */
+        if (zmem_read32(g_module_obj + 4) != g_shell_obj) {
+            LOGW("boot: corrigindo AEEMod.m_pIShell (era 0x%08X)",
+                 zmem_read32(g_module_obj + 4));
+            zmem_write32(g_module_obj + 4, g_shell_obj);
+        }
+        /* pfnModCrInst invalido -> forca caminho dinamico (tecnica zeemu) */
+        {
+            uint32_t pfn = zmem_read32(g_module_obj + 12);
+            if (pfn != 0 && pfn >= ZMEM_RAM_SIZE) {
+                LOGW("boot: sanitizando pfnModCrInst=0x%08X -> 0", pfn);
+                zmem_write32(g_module_obj + 12, 0);
+            }
         }
         uint32_t vtbl = zmem_read32(g_module_obj);
         uint32_t create = zmem_read32(vtbl + 8);
