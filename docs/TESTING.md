@@ -90,8 +90,10 @@ seja reconhecido e listado, não o número exato).
 Load Content → navegar até tests\roms\real\<jogo>\mod\... → selecionar o arquivo .mod
 ```
 
-Extensões aceitas hoje pelo core: `.mod` e `.mif` (`valid_extensions = "mod|mif"` em
-`retro_get_system_info`). Não é mais necessário (nem representativo) criar um `.mod` fake —
+Extensões aceitas hoje pelo core: `.mod`, `.mif` e `.zip`
+(`valid_extensions = "mod|mif|zip"` em `retro_get_system_info`). Em `.zip`, a extração
+é responsabilidade do frontend libretro; o core não mantém cache próprio persistente de
+arquivos extraídos. Não é mais necessário (nem representativo) criar um `.mod` fake —
 use as ROMs reais já presentes em `tests/roms/real/`.
 
 **Resultado esperado**: depende do jogo (veja tabela abaixo). Em nenhum caso deve haver crash

@@ -52,6 +52,8 @@
 - [x] Build validado em `Release|x64` com Visual Studio 2022
 - [x] `tests/libretro_smoke.c` roda ROMs reais e captura logs sem depender da interface grafica do RetroArch
 - [x] Loader com fallback por nome de caminho para reconhecer Pac-Mania/Double Dragon quando o CLSID nao aparece direto no MIF
+- [x] `retro_load_game` com fallback por `path` (quando o frontend nao entrega `info->data`) e extensao `zip` habilitada no `valid_extensions`; extração permanece no frontend
+- [x] Base de assets ajustada para dumps no layout `mod/<id>/<jogo>.mod` (raiz do pacote passa a ser usada para `IFileMgr`)
 
 **Pac-Mania**: passa por `AEEMod_Load`, resolve o CLSID `0x01087B72` e entra em `IModule_CreateInstance`. A classe BREW `0x0100101C` e criada como stub, com os dois resultados do metodo 5 inicializados. Ficava presa em loop infinito dentro do `CreateInstance` (ver diagnostico e correcao na secao "Bloqueio atual" abaixo).
 

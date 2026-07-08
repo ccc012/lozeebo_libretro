@@ -18,6 +18,7 @@
  */
 #include <string.h>
 #include <stdio.h>
+#include <ctype.h>
 #include "mod_loader.h"
 #include "../memory/memory.h"
 #include "../cpu/cpu.h"
@@ -33,6 +34,60 @@ static uint32_t rd32(const uint8_t *p) {
 static uint32_t branch_target(uint32_t insn, uint32_t pc) {
     int32_t imm = (int32_t)(insn << 8) >> 6; /* sign-extend imm24, <<2 */
     return pc + 8 + (uint32_t)imm;
+}
+
+static int ci_is_mod_segment(const char *p) {
+    return p[0] && p[1] && p[2] && p[3] &&
+           tolower((unsigned char)p[0]) == 'm' &&
+           tolower((unsigned char)p[1]) == 'o' &&
+           tolower((unsigned char)p[2]) == 'd' &&
+           p[3] == '/';
+}
+
+static void zmod_set_asset_base_from_path(const char *path) {
+    char full[512];
+    char *last_sep;
+    char *p;
+    char *mod_seg = NULL;
+
+    if (!path || !path[0])
+        return;
+
+    strncpy(full, path, sizeof(full) - 1);
+    full[sizeof(full) - 1] = '\0';
+
+    for (p = full; *p; ++p) {
+        if (*p == '\\')
+            *p = '/';
+    }
+
+    /* Remove nome do arquivo */
+    last_sep = strrchr(full, '/');
+    if (!last_sep)
+        return;
+    *last_sep = '\0';
+
+    /* Detecta .../mod/<id>/arquivo.mod e usa raiz antes de /mod/ */
+    for (p = full; *p; ++p) {
+        if ((p == full || p[-1] == '/') && ci_is_mod_segment(p))
+            mod_seg = p;
+    }
+
+    if (mod_seg) {
+        char *id_start = mod_seg + 4;
+        char *id_end = strchr(id_start, '/');
+        if (id_end && id_end[1] != '\0') {
+            if (mod_seg == full) {
+                zbrew_set_file_base(".");
+                return;
+            }
+            *mod_seg = '\0';
+            zbrew_set_file_base(full);
+            return;
+        }
+    }
+
+    zbrew_set_file_base(full);
 }
 
 bool zmod_load(const void *data, size_t size, const char *path,
@@ -99,17 +154,7 @@ bool zmod_load(const void *data, size_t size, const char *path,
         char name[64];
         if (zmif_parse_name(path, name, sizeof(name)))
             strncpy(out->name, name, sizeof(out->name) - 1);
-        {
-            char dir[512];
-            const char *s1 = strrchr(path, '/');
-            const char *s2 = strrchr(path, '\\');
-            const char *sep = s1 > s2 ? s1 : s2;
-            if (sep && (size_t)(sep - path) < sizeof(dir)) {
-                memcpy(dir, path, sep - path);
-                dir[sep - path] = '\0';
-                zbrew_set_file_base(dir);
-            }
-        }
+        zmod_set_asset_base_from_path(path);
     }
 
     /* CPU: SP no topo, LR provisorio (zboot_start define o resto) */

@@ -94,7 +94,7 @@ void retro_get_system_info(struct retro_system_info *info) {
     memset(info, 0, sizeof(*info));
     info->library_name     = "Zeebo";
     info->library_version  = "0.2-cpu";
-    info->valid_extensions = "mod|mif";
+    info->valid_extensions = "mod|mif|zip";
     info->need_fullpath    = false;
     info->block_extract    = false;
 }
@@ -136,11 +136,63 @@ void retro_set_controller_port_device(unsigned port, unsigned device) {
 /* =====================================================
  * LOAD / UNLOAD GAME
  * ===================================================== */
+static bool load_game_from_path(const char *path, void **out_data, size_t *out_size) {
+    FILE *f;
+    long sz;
+    void *buf;
+
+    if (!path || !path[0] || !out_data || !out_size)
+        return false;
+
+    f = fopen(path, "rb");
+    if (!f) {
+        LOGE("retro_load_game: falha ao abrir '%s'", path);
+        return false;
+    }
+
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return false;
+    }
+    sz = ftell(f);
+    if (sz <= 0) {
+        fclose(f);
+        return false;
+    }
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return false;
+    }
+
+    buf = malloc((size_t)sz);
+    if (!buf) {
+        fclose(f);
+        return false;
+    }
+
+    if (fread(buf, 1, (size_t)sz, f) != (size_t)sz) {
+        free(buf);
+        fclose(f);
+        return false;
+    }
+
+    fclose(f);
+    *out_data = buf;
+    *out_size = (size_t)sz;
+    return true;
+}
+
 bool retro_load_game(const struct retro_game_info *info) {
     enum retro_pixel_format fmt = RETRO_PIXEL_FORMAT_XRGB8888;
+    void *loaded_data = NULL;
+    size_t loaded_size = 0;
 
-    if (!info || !info->data || !info->size) {
-        LOGE("retro_load_game: sem dados de conteudo");
+    if (!info) {
+        LOGE("retro_load_game: sem info de conteudo");
+        return false;
+    }
+    if ((!info->data || !info->size) && !(info->path && info->path[0])) {
+        LOGE("retro_load_game: sem dados e sem caminho de conteudo");
         return false;
     }
     if (!environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt)) {
@@ -148,12 +200,22 @@ bool retro_load_game(const struct retro_game_info *info) {
         return false;
     }
 
+    if (info->data && info->size) {
+        loaded_data = malloc(info->size);
+        if (!loaded_data) return false;
+        memcpy(loaded_data, info->data, info->size);
+        loaded_size = info->size;
+    } else {
+        if (!load_game_from_path(info->path, &loaded_data, &loaded_size)) {
+            LOGE("retro_load_game: nao foi possivel carregar '%s'", info->path ? info->path : "(null)");
+            return false;
+        }
+    }
+
     /* guarda copia para retro_reset */
     free(g_game_data);
-    g_game_data = malloc(info->size);
-    if (!g_game_data) return false;
-    memcpy(g_game_data, info->data, info->size);
-    g_game_size = info->size;
+    g_game_data = loaded_data;
+    g_game_size = loaded_size;
     g_game_path[0] = '\0';
     if (info->path)
         snprintf(g_game_path, sizeof(g_game_path), "%s", info->path);
@@ -167,6 +229,9 @@ bool retro_load_game(const struct retro_game_info *info) {
     if (!zmod_load(g_game_data, g_game_size,
                    g_game_path[0] ? g_game_path : NULL, &g_mod_info)) {
         LOGE("retro_load_game: falha no loader");
+        free(g_game_data);
+        g_game_data = NULL;
+        g_game_size = 0;
         return false;
     }
 
