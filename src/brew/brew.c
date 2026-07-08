@@ -117,7 +117,7 @@ static void trap_dispatch(uint32_t addr) {
             zbrew_handle_display(id);
         else if (id >= ZT_BMP_ADDREF && id <= ZT_BMP_BLT)
             zbrew_handle_bitmap(id);
-        else if (id >= ZT_FMGR_ADDREF && id <= ZT_FILE_SEEK)
+        else if (id >= ZT_FMGR_ADDREF && id <= ZT_FILE_STUB)
             zbrew_handle_file(id);
         else if (id >= ZT_SND_ADDREF && id <= ZT_SND_SETVOLUME)
             zbrew_handle_sound(id);

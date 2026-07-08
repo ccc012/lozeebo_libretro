@@ -90,6 +90,27 @@ static void zmod_set_asset_base_from_path(const char *path) {
     zbrew_set_file_base(full);
 }
 
+static void zmod_try_probe_packaged_assets(const char *path) {
+    char candidate[1024];
+    char *dot;
+    size_t len;
+
+    if (!path || !path[0]) return;
+    len = strlen(path);
+    if (len >= sizeof(candidate)) return;
+    strcpy(candidate, path);
+    dot = strrchr(candidate, '.');
+    if (!dot) return;
+
+    if ((tolower((unsigned char)dot[1]) == 'm' && tolower((unsigned char)dot[2]) == 'o' &&
+         tolower((unsigned char)dot[3]) == 'd' && dot[4] == '\0') ||
+        (tolower((unsigned char)dot[1]) == 'b' && tolower((unsigned char)dot[2]) == 'a' &&
+         tolower((unsigned char)dot[3]) == 'r' && dot[4] == '\0')) {
+        strcpy((char *)dot, ".bar");
+        zbar_probe(candidate);
+    }
+}
+
 bool zmod_load(const void *data, size_t size, const char *path,
                zmod_info_t *out) {
     const uint8_t *bytes = (const uint8_t *)data;
@@ -102,6 +123,20 @@ bool zmod_load(const void *data, size_t size, const char *path,
     }
     if (size > ZMEM_RAM_SIZE / 2) {
         LOGE("zmod_load: ROM grande demais (%u bytes)", (unsigned)size);
+        return false;
+    }
+
+    /* Rejeita containers que nao sao codigo ARM: sem isto, um .zip/.ggz
+     * entregue cru pelo frontend cairia no ramo "mod cru" e seria
+     * executado como codigo em VA 0. */
+    if (bytes[0] == 'P' && bytes[1] == 'K' &&
+        (bytes[2] == 0x03 || bytes[2] == 0x05 || bytes[2] == 0x07)) {
+        LOGE("zmod_load: arquivo e um ZIP - extraia o .mod de dentro "
+             "(o core nao descompacta; use o browse-archive do RetroArch)");
+        return false;
+    }
+    if (bytes[0] == 0x1F && bytes[1] == 0x8B) {
+        LOGE("zmod_load: arquivo e um GZIP/GGZ - extraia o conteudo antes");
         return false;
     }
 
@@ -154,7 +189,14 @@ bool zmod_load(const void *data, size_t size, const char *path,
         char name[64];
         if (zmif_parse_name(path, name, sizeof(name)))
             strncpy(out->name, name, sizeof(out->name) - 1);
+        if (!out->name[0] || strcmp(out->name, "Zeebo Game") == 0) {
+            uint32_t hinted = zmif_find_applet_clsid(path);
+            if (hinted == 0x010903C6u) {
+                strncpy(out->name, "Zeebo Family Pack", sizeof(out->name) - 1);
+            }
+        }
         zmod_set_asset_base_from_path(path);
+        zmod_try_probe_packaged_assets(path);
     }
 
     /* CPU: SP no topo, LR provisorio (zboot_start define o resto) */

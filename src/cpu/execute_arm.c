@@ -301,8 +301,12 @@ void zarm_execute(uint32_t instr) {
             zcpu_write_pc(pc + offset);
             return;
         }
-        LOGW("instrucao incondicional 0x%08X nao implementada (PC=0x%08X)",
-             instr, g_cpu.r[REG_PC] - 8);
+        static uint32_t warn_count = 0;
+        if (warn_count < 16) {
+            LOGW("instrucao incondicional 0x%08X nao implementada (PC=0x%08X)",
+                 instr, g_cpu.r[REG_PC] - 8);
+            warn_count++;
+        }
         return;
     }
 
@@ -400,8 +404,12 @@ void zarm_execute(uint32_t instr) {
     case 2: /* LDR/STR offset imediato */
     case 3: /* LDR/STR offset registrador */
         if (op == 3 && BIT(instr, 4)) {
-            LOGW("instrucao de midia/indefinida 0x%08X (PC=0x%08X)",
-                 instr, g_cpu.r[REG_PC] - 8);
+            static uint32_t warn_count = 0;
+            if (warn_count < 16) {
+                LOGW("instrucao de midia/indefinida 0x%08X (PC=0x%08X)",
+                     instr, g_cpu.r[REG_PC] - 8);
+                warn_count++;
+            }
             return;
         }
         ldst_execute(instr);
@@ -416,17 +424,33 @@ void zarm_execute(uint32_t instr) {
         return;
 
     case 6: /* coprocessador LDC/STC */
-        LOGW("coprocessador LDC/STC 0x%08X ignorado", instr);
+        {
+            static uint32_t warn_count = 0;
+            if (warn_count < 8) {
+                LOGW("coprocessador LDC/STC 0x%08X ignorado", instr);
+                warn_count++;
+            }
+        }
         return;
 
     case 7:
         if (BIT(instr, 24)) {
             /* SWI - por decisao de escopo, logado e tratado como nop */
-            LOGW("SWI 0x%06X em PC=0x%08X (nao usado no trap HLE)",
-                 instr & 0xFFFFFF, g_cpu.r[REG_PC] - 8);
+            static uint32_t warn_count = 0;
+            if (warn_count < 8) {
+                LOGW("SWI 0x%06X em PC=0x%08X (nao usado no trap HLE)",
+                     instr & 0xFFFFFF, g_cpu.r[REG_PC] - 8);
+                warn_count++;
+            }
             return;
         }
-        LOGW("coprocessador CDP/MCR/MRC 0x%08X ignorado", instr);
+        {
+            static uint32_t warn_count = 0;
+            if (warn_count < 8) {
+                LOGW("coprocessador CDP/MCR/MRC 0x%08X ignorado", instr);
+                warn_count++;
+            }
+        }
         return;
     }
 }

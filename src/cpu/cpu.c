@@ -59,11 +59,26 @@ void zcpu_step(void) {
     if (g_cpu.halted) return;
 
     uint32_t pc = g_cpu.r[REG_PC];
-    if (pc == 0x00005868u || pc == 0x0000587Cu) {
-        uint32_t obj = g_cpu.r[0];
-        uint32_t vtbl = zmem_read32(obj);
-        LOGI("HID callback PC=0x%08X obj=0x%08X vtbl=0x%08X slot9=0x%08X",
-             pc, obj, vtbl, zmem_read32(vtbl + 0x24));
+    if (pc == 0x0007AA9Cu) {
+        static uint32_t hits = 0;
+        if (hits < 8) {
+            uint32_t r8 = g_cpu.r[8];
+            LOGI("watch loop-div 0x7AA9C: r8=0x%08X [r8+0x54]=0x%08X "
+                 "[r8+0x78]=0x%08X [r8+0x7C]=0x%08X r4=0x%08X LR=0x%08X",
+                 r8, zmem_read32(r8 + 0x54u), zmem_read32(r8 + 0x78u),
+                 zmem_read32(r8 + 0x7Cu), g_cpu.r[4], g_cpu.r[REG_LR]);
+            hits++;
+        }
+    }
+    if (pc == 0x0007AA40u) {
+        static uint32_t hits2 = 0;
+        if (hits2 < 8) {
+            LOGI("watch entrada 0x7AA40: r0=0x%08X r1=0x%08X r2=0x%08X "
+                 "r3=0x%08X LR=0x%08X SP=0x%08X",
+                 g_cpu.r[0], g_cpu.r[1], g_cpu.r[2], g_cpu.r[3],
+                 g_cpu.r[REG_LR], g_cpu.r[REG_SP]);
+            hits2++;
+        }
     }
     ztrace_pc(pc);
 

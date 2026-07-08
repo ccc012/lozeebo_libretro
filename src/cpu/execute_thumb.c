@@ -57,8 +57,12 @@ void zthumb_execute(uint16_t instr) {
 
     /* BKPT Thumb */
     if ((instr & 0xFF00) == 0xBE00) {
-        LOGW("BKPT Thumb 0x%02X em PC=0x%08X", instr & 0xFF,
-             g_cpu.r[REG_PC] - 4);
+        static uint32_t warn_count = 0;
+        if (warn_count < 8) {
+            LOGW("BKPT Thumb 0x%02X em PC=0x%08X", instr & 0xFF,
+                 g_cpu.r[REG_PC] - 4);
+            warn_count++;
+        }
         return;
     }
 
@@ -71,8 +75,12 @@ void zthumb_execute(uint16_t instr) {
 
     /* Formato 17: SWI */
     if ((instr & 0xFF00) == 0xDF00) {
-        LOGW("SWI Thumb 0x%02X em PC=0x%08X", instr & 0xFF,
-             g_cpu.r[REG_PC] - 4);
+        static uint32_t warn_count = 0;
+        if (warn_count < 8) {
+            LOGW("SWI Thumb 0x%02X em PC=0x%08X", instr & 0xFF,
+                 g_cpu.r[REG_PC] - 4);
+            warn_count++;
+        }
         return;
     }
 
@@ -177,7 +185,13 @@ void zthumb_execute(uint16_t instr) {
                                                       ((rm >> 8) & 0xFF)));
                 break;
             default:
-                LOGW("Thumb 0x%04X nao implementado", instr);
+                {
+                    static uint32_t warn_count = 0;
+                    if (warn_count < 8) {
+                        LOGW("Thumb 0x%04X nao implementado", instr);
+                        warn_count++;
+                    }
+                }
         }
         return;
     }
@@ -362,6 +376,10 @@ void zthumb_execute(uint16_t instr) {
         return;
     }
 
-    LOGW("instrucao Thumb 0x%04X nao implementada (PC=0x%08X)",
-         instr, g_cpu.r[REG_PC] - 4);
+    static uint32_t warn_count = 0;
+    if (warn_count < 16) {
+        LOGW("instrucao Thumb 0x%04X nao implementada (PC=0x%08X)",
+             instr, g_cpu.r[REG_PC] - 4);
+        warn_count++;
+    }
 }
