@@ -42,11 +42,29 @@ void zcpu_bx(uint32_t value) {
 }
 
 void ztrace_pc(uint32_t pc);
+void ztrace_dump(void);
+
+/* PC valido para fetch: RAM, heap ou stack (BREW pode materializar
+ * thunks no heap/stack). Fora disso a CPU descarrilou. */
+static bool pc_fetchable(uint32_t pc) {
+    if (pc < ZMEM_RAM_SIZE) return true;
+    if (pc >= ZMEM_HEAP_BASE && pc < ZMEM_HEAP_BASE + ZMEM_HEAP_SIZE)
+        return true;
+    if (pc >= ZMEM_STACK_BASE && pc < ZMEM_STACK_BASE + ZMEM_STACK_SIZE)
+        return true;
+    return false;
+}
 
 void zcpu_step(void) {
     if (g_cpu.halted) return;
 
     uint32_t pc = g_cpu.r[REG_PC];
+    if (pc == 0x00005868u || pc == 0x0000587Cu) {
+        uint32_t obj = g_cpu.r[0];
+        uint32_t vtbl = zmem_read32(obj);
+        LOGI("HID callback PC=0x%08X obj=0x%08X vtbl=0x%08X slot9=0x%08X",
+             pc, obj, vtbl, zmem_read32(vtbl + 0x24));
+    }
     ztrace_pc(pc);
 
     /* Trap HLE: chamada de API BREW via endereco magico */
@@ -57,6 +75,15 @@ void zcpu_step(void) {
             LOGE("trap HLE em 0x%08X sem handler - parando CPU", pc);
             g_cpu.halted = true;
         }
+        return;
+    }
+
+    /* Descarrilou: fetch fora de qualquer regiao executavel */
+    if (!pc_fetchable(pc)) {
+        LOGE("CPU descarrilou: fetch em 0x%08X (LR=0x%08X SP=0x%08X)",
+             pc, g_cpu.r[REG_LR], g_cpu.r[REG_SP]);
+        ztrace_dump();
+        g_cpu.halted = true;
         return;
     }
 

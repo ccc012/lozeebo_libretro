@@ -6,6 +6,7 @@
 #include "../gpu/framebuffer.h"
 #include "../debug/log.h"
 
+
 static uint32_t g_shell_ptr = 0;
 static bool     g_frame_ready = false;
 static uint32_t g_uptime_ms = 0;
@@ -117,8 +118,11 @@ static void trap_dispatch(uint32_t addr) {
             zbrew_handle_sound(id);
         else {
             if (g_unimpl_count < 64) {
-                LOGW("API nao implementada: trap 0x%02X (LR=0x%08X)",
-                     id, ret_pc);
+                LOGW("API nao implementada: addr=0x%08X id=0x%X "
+                     "R0=0x%08X R1=0x%08X R2=0x%08X R3=0x%08X "
+                     "LR=0x%08X SP=0x%08X",
+                     addr, id, g_cpu.r[0], g_cpu.r[1], g_cpu.r[2],
+                     g_cpu.r[3], ret_pc, g_cpu.r[REG_SP]);
                 g_unimpl_count++;
             }
             g_cpu.r[0] = ZBREW_EFAILED;

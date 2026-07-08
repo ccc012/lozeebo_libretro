@@ -1,0 +1,175 @@
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <windows.h>
+
+#include "../src/core/libretro.h"
+
+static void frontend_log(enum retro_log_level level, const char *fmt, ...)
+{
+    va_list args;
+    static const char *names[] = { "DEBUG", "INFO", "WARN", "ERROR" };
+    fprintf(stderr, "[%s] ", names[level <= RETRO_LOG_ERROR ? level : RETRO_LOG_ERROR]);
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+}
+
+static bool environment(unsigned command, void *data)
+{
+    if (command == RETRO_ENVIRONMENT_GET_LOG_INTERFACE) {
+        ((struct retro_log_callback *)data)->log = frontend_log;
+        return true;
+    }
+    if (command == RETRO_ENVIRONMENT_SET_PIXEL_FORMAT)
+        return *(enum retro_pixel_format *)data == RETRO_PIXEL_FORMAT_XRGB8888;
+    if (command == RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME)
+        return true;
+    return false;
+}
+
+static void video(const void *data, unsigned width, unsigned height, size_t pitch)
+{
+    const uint32_t first_pixel = data ? *(const uint32_t *)data : 0;
+    static unsigned frames;
+    if ((frames++ % 60) == 0)
+        fprintf(stderr, "[VIDEO] %ux%u pitch=%zu first=0x%08X\n",
+                width, height, pitch, first_pixel);
+}
+
+static size_t audio_batch(const int16_t *data, size_t frames)
+{
+    (void)data;
+    return frames;
+}
+
+static void input_poll(void) {}
+
+static unsigned input_frame;
+
+static int16_t input_state(unsigned port, unsigned device,
+                           unsigned index, unsigned id)
+{
+    (void)port;
+    (void)device;
+    (void)index;
+    if (port == 0 && device == RETRO_DEVICE_JOYPAD && index == 0 &&
+        id == RETRO_DEVICE_ID_JOYPAD_A && input_frame == 30)
+        return 1;
+    return 0;
+}
+
+static void *read_file(const char *path, size_t *size)
+{
+    FILE *file = fopen(path, "rb");
+    void *data;
+    long length;
+    if (!file)
+        return NULL;
+    fseek(file, 0, SEEK_END);
+    length = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    data = malloc((size_t)length);
+    if (!data || fread(data, 1, (size_t)length, file) != (size_t)length) {
+        free(data);
+        data = NULL;
+    }
+    fclose(file);
+    *size = data ? (size_t)length : 0;
+    return data;
+}
+
+#define LOAD_API(name) do { \
+    name = (name##_t)GetProcAddress(core, #name); \
+    if (!name) { fprintf(stderr, "Missing export: %s\n", #name); return 3; } \
+} while (0)
+
+typedef void (*retro_set_environment_t)(retro_environment_t);
+typedef void (*retro_set_video_refresh_t)(retro_video_refresh_t);
+typedef void (*retro_set_audio_sample_batch_t)(retro_audio_sample_batch_t);
+typedef void (*retro_set_input_poll_t)(retro_input_poll_t);
+typedef void (*retro_set_input_state_t)(retro_input_state_t);
+typedef void (*retro_init_t)(void);
+typedef void (*retro_deinit_t)(void);
+typedef bool (*retro_load_game_t)(const struct retro_game_info *);
+typedef void (*retro_unload_game_t)(void);
+typedef void (*retro_run_t)(void);
+
+int main(int argc, char **argv)
+{
+    HMODULE core;
+    void *rom_data;
+    size_t rom_size;
+    struct retro_game_info game = {0};
+    unsigned frame;
+    retro_set_environment_t retro_set_environment;
+    retro_set_video_refresh_t retro_set_video_refresh;
+    retro_set_audio_sample_batch_t retro_set_audio_sample_batch;
+    retro_set_input_poll_t retro_set_input_poll;
+    retro_set_input_state_t retro_set_input_state;
+    retro_init_t retro_init;
+    retro_deinit_t retro_deinit;
+    retro_load_game_t retro_load_game;
+    retro_unload_game_t retro_unload_game;
+    retro_run_t retro_run;
+
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s core.dll game.mod\n", argv[0]);
+        return 2;
+    }
+
+    core = LoadLibraryA(argv[1]);
+    if (!core) {
+        fprintf(stderr, "LoadLibrary failed: %lu\n", GetLastError());
+        return 3;
+    }
+
+    LOAD_API(retro_set_environment);
+    LOAD_API(retro_set_video_refresh);
+    LOAD_API(retro_set_audio_sample_batch);
+    LOAD_API(retro_set_input_poll);
+    LOAD_API(retro_set_input_state);
+    LOAD_API(retro_init);
+    LOAD_API(retro_deinit);
+    LOAD_API(retro_load_game);
+    LOAD_API(retro_unload_game);
+    LOAD_API(retro_run);
+
+    rom_data = read_file(argv[2], &rom_size);
+    if (!rom_data) {
+        fprintf(stderr, "Could not read ROM: %s\n", argv[2]);
+        return 4;
+    }
+
+    game.path = argv[2];
+    game.data = rom_data;
+    game.size = rom_size;
+
+    retro_set_environment(environment);
+    retro_set_video_refresh(video);
+    retro_set_audio_sample_batch(audio_batch);
+    retro_set_input_poll(input_poll);
+    retro_set_input_state(input_state);
+    retro_init();
+
+    if (!retro_load_game(&game)) {
+        fprintf(stderr, "retro_load_game failed\n");
+        retro_deinit();
+        free(rom_data);
+        FreeLibrary(core);
+        return 5;
+    }
+
+    for (frame = 0; frame < 180; ++frame) {
+        input_frame = frame;
+        retro_run();
+    }
+
+    retro_unload_game();
+    retro_deinit();
+    free(rom_data);
+    FreeLibrary(core);
+    return 0;
+}

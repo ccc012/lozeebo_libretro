@@ -17,6 +17,14 @@
 static FILE *g_handles[ZFILE_MAX];
 static char  g_base_dir[ZPATH_MAX] = ".";
 
+uint32_t zbrew_create_filemgr(void) {
+    static const uint32_t vtbl[] = {
+        ZT_FMGR_ADDREF, ZT_FMGR_RELEASE, ZT_FMGR_OPENFILE,
+        ZT_FMGR_TEST, ZT_FMGR_REMOVE
+    };
+    return zbrew_make_interface(vtbl, 5, 0);
+}
+
 void zbrew_set_file_base(const char *dir) {
     if (dir && dir[0]) {
         strncpy(g_base_dir, dir, sizeof(g_base_dir) - 1);

@@ -1,0 +1,113 @@
+Infuse - Zeebo multiplatform emulator / Qualcomm BREW reimplementation
+
+Copyright (C) 2018, 2023-2024
+ Przemyslaw Skryjomski (Tuxality)
+
+This software is provided 'as-is', without any express or implied
+warranty. In no event will the author be held liable for any
+damages arising from the use of this software.
+
+Permission is granted to anyone to use this software for individual
+purpose and is subject to the following restrictions:
+
+1.  The origin of this software must not be misrepresented, you
+must not claim that you wrote the original software nor suggest
+that you were part of such.
+
+2.  Altered versions of source code must be plainly marked as such,
+must not be misrepresented as being the original software.
+
+3.  Altered versions of binary distribution and redistributing of such
+is not allowed in any way.
+
+4.  This notice cannot be removed or altered in any way from any
+source as well as binary distribution.
+
+5.  This software cannot be redistributed in form of unofficial
+bundle or package as well as it cannot be publicly hosted by the
+third parties, its origin must not be misrepresented.
+
+6.  This software is intended to be used by the end-user, it cannot be
+sold nor be part of any commercial product.
+
+7.  Above restrictions are subject to change in the future by the
+original project owner only, which is Tuxality.
+
+-----------------------------------------------------------------------------------------
+
+This software uses external components under licenses listed below.
+
+-----------------------------------------------------------------------------------------
+
+dynarmic by merryhime under BSD Zero Clause license
+
+Copyright (C) 2017 merryhime <git@mary.rs>
+
+Permission to use, copy, modify, and/or distribute this software for
+any purpose with or without fee is hereby granted.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
+AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
+OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+-----------------------------------------------------------------------------------------
+
+Noto Sans JP font under SIL Open Font License Version 1.1
+
+Copyright 2014-2020 Adobe (http://www.adobe.com/)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+https://openfontlicense.org
+
+License can be found in the OFL.txt file inside brew/font directory.
+
+-----------------------------------------------------------------------------------------
+
+libresample high quality mode only by Dirk Engling <erdgeist@erdgeist.org>.
+
+All contributions by erdgeist@erdgeist.org are under beerware license.
+
+Original implementation by Dominic Mazzoni under BSD license
+
+Copyright (c) 2003, Dominic Mazzoni
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice, this
+  list of conditions and the following disclaimer in the documentation and/or
+  other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+-----------------------------------------------------------------------------------------
+
+GeneralUser GS v1.471.sf2 by s_chriscollins@hotmail.com under GeneralUser GS License v2.0
+
+-----------------------------------------------------------------------------------------
+
+GMGSx.sf2 by Kenneth Rundt under Public Domain License
+
+-----------------------------------------------------------------------------------------
+
+'Chasing Daylight' by Scott Buckley - released under CC-BY 4.0. www.scottbuckley.com.au
+
+-----------------------------------------------------------------------------------------
