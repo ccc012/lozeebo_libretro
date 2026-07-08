@@ -3,8 +3,8 @@
 **Emulador de código aberto para o console Zeebo, compatível com LibRetro/RetroArch**
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![License](https://img.shields.io/badge/license-MIT-blue)]()
-[![Phase](https://img.shields.io/badge/phase-0%20--%20Skeleton-yellow)]()
+[![License](https://img.shields.io/badge/license-GPLv3-blue)]()
+[![Phase](https://img.shields.io/badge/phase-advanced%20HLE%20core-orange)]()
 
 ---
 
@@ -22,16 +22,18 @@ O Zeebo foi um console Java-based lançado pela Samsung em 2009. Este projeto im
 
 ## 🚀 Status Atual
 
-**Fase 0: Setup & Skeleton** ✅
+**Base funcional avançada do core Zeebo** ✅
 
 - [x] Estrutura de pastas
 - [x] Header LibRetro obtido
-- [x] Skeleton core (28 funções) implementado
-- [x] Build system configurado
-- [x] Compilação bem-sucedida
-- [x] Documentação completa
+- [x] Core LibRetro integrado com CPU, memória, BREW, loader, input, áudio e vídeo
+- [x] ROMs de teste e ROMs reais de referência presentes
+- [x] Documentação de arquitetura e estratégia consolidada
+- [x] Build validado em Release|x64 (Visual Studio 2022)
+- [x] Pac-Mania e Zeebo Family Pack (ROMs reais) avançam via AEEMod_Load/IModule_CreateInstance
+- [ ] Bug de CPU em investigação durante a saída do CreateInstance (ver `docs/PROGRESS.md`)
 
-**Próxima**: Fase 1 - CPU ARM (em breve)
+**Próximo**: ver `docs/PROGRESS.md` para o estado exato do bug atual e os próximos passos
 
 ---
 
@@ -61,7 +63,13 @@ make install            # Instalar
 3. Load Core → procure "Zeebo"
 4. Load Content → selecione arquivo .mod
 
-**Mais detalhes**: `docs/TESTE_RETROARCH.md`
+**Mais detalhes**: `docs/TESTING.md`
+
+## Licença e reutilização
+
+O repositório está sob **GPLv3**. O projeto também pode incorporar código, ideias, adaptações ou trechos derivados de outros projetos compatíveis com a licença e com seus respectivos avisos de origem.
+
+Fontes de referência: ver `docs/THIRD_PARTY.md` (Zeemu, Infuse, GGZ BREW Tools, fontes/soundfonts).
 
 ---
 
@@ -82,13 +90,13 @@ tests/             → Testes
 ## 📚 Documentação
 
 Veja `docs/` para:
-- `SKELETON_CHECKLIST.md` - Checklist detalhado
-- `TESTE_RETROARCH.md` - Guia de teste
-- `FINAL_REPORT.md` - Relatório completo
-- `PROGRESS.md` - Timeline de desenvolvimento
+- `PROGRESS.md` - Timeline de desenvolvimento e estado atual (bugs, próximos passos)
+- `TESTING.md` - Guia de teste (ROMs reais, smoke test, como ler um crash)
+- `THIRD_PARTY.md` - Licenças e atribuições de material de terceiros
+- `PLANNING_ARCHIVE.md` - Arquivo do racional de design original (pré-desenvolvimento)
 
 ---
 
 ## 📄 Licença
 
-MIT License
+GPLv3
