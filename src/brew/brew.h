@@ -105,7 +105,15 @@ enum ztrap_id {
     ZT_STUB_BASE     = 0x300,
     ZT_STUB_END      = 0x3FF,
 
-    ZT_MAX = 0x400
+    /* EGL interface (para jogos 3D como Zeebo Family Pack) */
+    ZT_EGL_BASE      = 0x400,
+    ZT_EGL_END       = 0x4FF,
+
+    /* GL interface (OpenGL ES para jogos 3D) */
+    ZT_GL_BASE       = 0x500,
+    ZT_GL_END        = 0x5FF,
+
+    ZT_MAX = 0x600
 };
 
 /* ---- Class IDs (convencao; valores reais viram da doc BREW) ---- */

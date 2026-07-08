@@ -3,7 +3,14 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#if defined(_WIN32)
 #include <windows.h>
+typedef HMODULE core_handle_t;
+#else
+#include <dlfcn.h>
+typedef void *core_handle_t;
+#endif
 
 #include "../src/core/libretro.h"
 
@@ -81,8 +88,45 @@ static void *read_file(const char *path, size_t *size)
     return data;
 }
 
+static core_handle_t core_open(const char *path)
+{
+#if defined(_WIN32)
+    return LoadLibraryA(path);
+#else
+    return dlopen(path, RTLD_NOW | RTLD_LOCAL);
+#endif
+}
+
+static void *core_symbol(core_handle_t core, const char *name)
+{
+#if defined(_WIN32)
+    return (void *)GetProcAddress(core, name);
+#else
+    return dlsym(core, name);
+#endif
+}
+
+static void core_close(core_handle_t core)
+{
+#if defined(_WIN32)
+    FreeLibrary(core);
+#else
+    dlclose(core);
+#endif
+}
+
+static void print_load_error(const char *prefix)
+{
+#if defined(_WIN32)
+    fprintf(stderr, "%s: %lu\n", prefix, GetLastError());
+#else
+    const char *err = dlerror();
+    fprintf(stderr, "%s: %s\n", prefix, err ? err : "desconhecido");
+#endif
+}
+
 #define LOAD_API(name) do { \
-    name = (name##_t)GetProcAddress(core, #name); \
+    name = (name##_t)core_symbol(core, #name); \
     if (!name) { fprintf(stderr, "Missing export: %s\n", #name); return 3; } \
 } while (0)
 
@@ -99,7 +143,7 @@ typedef void (*retro_run_t)(void);
 
 int main(int argc, char **argv)
 {
-    HMODULE core;
+    core_handle_t core;
     void *rom_data;
     size_t rom_size;
     struct retro_game_info game = {0};
@@ -116,13 +160,13 @@ int main(int argc, char **argv)
     retro_run_t retro_run;
 
     if (argc != 3) {
-        fprintf(stderr, "Usage: %s core.dll game.mod\n", argv[0]);
+        fprintf(stderr, "Usage: %s core.{dll,so,dylib} game.mod\n", argv[0]);
         return 2;
     }
 
-    core = LoadLibraryA(argv[1]);
+    core = core_open(argv[1]);
     if (!core) {
-        fprintf(stderr, "LoadLibrary failed: %lu\n", GetLastError());
+        print_load_error("Could not load core");
         return 3;
     }
 
@@ -140,6 +184,7 @@ int main(int argc, char **argv)
     rom_data = read_file(argv[2], &rom_size);
     if (!rom_data) {
         fprintf(stderr, "Could not read ROM: %s\n", argv[2]);
+        core_close(core);
         return 4;
     }
 
@@ -158,7 +203,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "retro_load_game failed\n");
         retro_deinit();
         free(rom_data);
-        FreeLibrary(core);
+        core_close(core);
         return 5;
     }
 
@@ -170,6 +215,6 @@ int main(int argc, char **argv)
     retro_unload_game();
     retro_deinit();
     free(rom_data);
-    FreeLibrary(core);
+    core_close(core);
     return 0;
 }

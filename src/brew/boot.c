@@ -16,6 +16,7 @@
 #include "../cpu/cpu.h"
 #include "../memory/memory.h"
 #include "../input/input.h"
+#include "../gpu/egl_gl.h"
 #include "../debug/log.h"
 
 uint32_t zbrew_uptime_ms(void);
@@ -392,6 +393,10 @@ void zboot_tick(uint32_t elapsed_ms) {
 static uint32_t real_create_instance(uint32_t clsid) {
     if (clsid == AEECLSID_FILEMGR_REAL)
         return zbrew_create_filemgr();
+    if (clsid == AEECLSID_EGL_REAL)
+        return zegl_create_interface();
+    if (clsid == AEECLSID_GL_REAL)
+        return zgl_create_interface();
     return make_stub_interface(clsid);
 }
 
@@ -404,6 +409,31 @@ void zbrew_handle_ishell_real(uint32_t id) {
     switch (slot) {
     case 0: case 1: /* AddRef/Release */
         g_cpu.r[0] = 1;
+        break;
+
+    case 5: /* StartApplet */
+        g_cpu.r[0] = 0;
+        break;
+
+    case 6: /* CloseApplet */
+        g_cpu.r[0] = 0;
+        break;
+
+    case 7: /* CanStartApplet */
+        g_cpu.r[0] = 1;
+        break;
+
+    case 8: /* ActiveApplet */
+        g_cpu.r[0] = zboot_get_applet_object();
+        break;
+
+    case 9: /* EnumAppletInit */
+        if (r1) zmem_write32(r1, 0);
+        g_cpu.r[0] = 1;
+        break;
+
+    case 10: /* EnumNextApplet */
+        g_cpu.r[0] = 0;
         break;
 
     case 2: { /* CreateInstance(shell, clsid, ppObj) */
@@ -465,6 +495,19 @@ void zbrew_handle_ishell_real(uint32_t id) {
         break;
     }
 
+    case 14: /* CreateDialog */
+        if (r3) zmem_write32(r3, make_stub_interface(0));
+        g_cpu.r[0] = 0;
+        break;
+
+    case 15: /* GetActiveDialog */
+        g_cpu.r[0] = 0;
+        break;
+
+    case 16: /* EndDialog */
+        g_cpu.r[0] = 0;
+        break;
+
     case 13: /* GetTimerExpiration(shell, pfn, puser) */
         g_cpu.r[0] = 0;
         break;
@@ -521,11 +564,53 @@ void zbrew_handle_ishell_real(uint32_t id) {
         g_cpu.r[0] = 0;
         break;
 
+    case 22: /* Beep */
+        g_cpu.r[0] = 0;
+        break;
+
     case 23: case 24: /* GetPrefs/SetPrefs */
         g_cpu.r[0] = 1; /* EFAILED */
         break;
 
+    case 25: /* GetItemStyle */
+        g_cpu.r[0] = 0;
+        break;
+
+    case 26: /* Prompt */
+    case 27: /* MessageBox */
+    case 28: /* MessageBoxText */
+        g_cpu.r[0] = 0;
+        break;
+
+    case 29: /* SetAlarm */
+    case 30: /* CancelAlarm */
+        g_cpu.r[0] = 0;
+        break;
+
+    case 31: /* AlarmsActive */
+        g_cpu.r[0] = 0;
+        break;
+
+    case 32: /* GetHandler */
+        g_cpu.r[0] = 0;
+        break;
+
+    case 33: /* RegisterHandler */
+    case 34: /* RegisterNotify */
+    case 35: /* Notify */
+        g_cpu.r[0] = 0;
+        break;
+
+    case 36: /* Resume */
+    case 37: /* ForceExit */
+        g_cpu.r[0] = 0;
+        break;
+
     case 38: /* GetPosition */
+        g_cpu.r[0] = 1;
+        break;
+
+    case 39: /* CheckPrivLevel */
         g_cpu.r[0] = 1;
         break;
 
@@ -539,6 +624,14 @@ void zbrew_handle_ishell_real(uint32_t id) {
         g_cpu.r[0] = 0;
         break;
 
+    case 42: /* RegisterSystemCallback */
+        g_cpu.r[0] = 0;
+        break;
+
+    case 43: /* DetectType */
+        g_cpu.r[0] = 1;
+        break;
+
     case 44: /* GetDeviceInfoEx */
         if (r3)
             zmem_write32(r3, 0);
@@ -547,6 +640,17 @@ void zbrew_handle_ishell_real(uint32_t id) {
 
     case 45: /* GetClassItemID(shell, clsid) */
         g_cpu.r[0] = (r1 && r1 == g_applet_clsid) ? 1 : 0;
+        break;
+
+    case 47: /* GetProperty */
+    case 48: /* SetProperty */
+    case 49: /* RegisterEvent */
+    case 50: /* Reset */
+        g_cpu.r[0] = 0;
+        break;
+
+    case 51: /* AppIsInGroup */
+        g_cpu.r[0] = 0;
         break;
 
     case 52: /* GetUpTimeMS */

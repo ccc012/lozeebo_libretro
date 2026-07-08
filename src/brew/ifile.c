@@ -2,10 +2,11 @@
  *
  * Mapeia nomes BREW para arquivos reais no diretorio da ROM.
  * Objeto IFile: [vtable][indice do handle host]
- * Seguranca: nomes com ".." ou caminho absoluto sao rejeitados.
+ * Seguranca: sandbox no diretorio base, sem escapar via "..".
  */
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include "brew.h"
 #include "../cpu/cpu.h"
 #include "../memory/memory.h"
@@ -13,6 +14,8 @@
 
 #define ZFILE_MAX 16
 #define ZPATH_MAX 512
+#define ZVCOMP_MAX 64
+#define ZVCOMP_LEN 96
 
 static FILE *g_handles[ZFILE_MAX];
 static char  g_base_dir[ZPATH_MAX] = ".";
@@ -32,16 +35,112 @@ void zbrew_set_file_base(const char *dir) {
     }
 }
 
-static bool name_ok(const char *name) {
-    if (!name[0]) return false;
-    if (strstr(name, "..")) return false;
-    if (name[0] == '/' || name[0] == '\\') return false;
-    if (strchr(name, ':')) return false;
-    return true;
+static int ci_starts_with(const char *s, const char *prefix) {
+    while (*prefix) {
+        unsigned char a, b;
+        if (!*s) return 0;
+        a = (unsigned char)*s++;
+        b = (unsigned char)*prefix++;
+        if (tolower(a) != tolower(b)) return 0;
+    }
+    return 1;
 }
 
-static void build_path(char *out, size_t outsz, const char *name) {
-    snprintf(out, outsz, "%s/%s", g_base_dir, name);
+static int name_ok(const char *name) {
+    if (!name || !name[0]) return 0;
+    if (name[0] == '/' || name[0] == '\\') return 0;
+    if (strchr(name, ':') && !ci_starts_with(name, "fs:/")) return 0;
+    return 1;
+}
+
+static void normalize_slashes(char *s) {
+    while (*s) {
+        if (*s == '\\') *s = '/';
+        s++;
+    }
+}
+
+static int split_component(const char **pp, char *out, size_t outsz) {
+    const char *p = *pp;
+    size_t n = 0;
+
+    while (*p == '/') p++;
+    while (*p && *p != '/') {
+        if (n + 1 < outsz) out[n++] = *p;
+        p++;
+    }
+    out[n] = '\0';
+    *pp = p;
+    return (int)n;
+}
+
+static int resolve_brew_path(char *out, size_t outsz, const char *name) {
+    char in[ZPATH_MAX + 260];
+    char virt[ZPATH_MAX + 260];
+    char comps[ZVCOMP_MAX][ZVCOMP_LEN];
+    int ncomp = 0;
+    const char *p;
+
+    if (!name_ok(name)) return 0;
+
+    strncpy(in, name, sizeof(in) - 1);
+    in[sizeof(in) - 1] = '\0';
+    normalize_slashes(in);
+
+    if (ci_starts_with(in, "fs:/")) {
+        strncpy(virt, in, sizeof(virt) - 1);
+        virt[sizeof(virt) - 1] = '\0';
+    } else {
+        const char *rel = in;
+        if (rel[0] == '.' && rel[1] == '/') rel += 2;
+        snprintf(virt, sizeof(virt), "fs:/%s", rel);
+    }
+
+    p = virt + 4; /* apos fs:/ */
+    while (*p == '/') p++;
+
+    while (*p) {
+        char c[ZVCOMP_LEN];
+        int len = split_component(&p, c, sizeof(c));
+        if (*p == '/') p++;
+        if (len <= 0 || (len == 1 && c[0] == '.'))
+            continue;
+        if (len == 2 && c[0] == '.' && c[1] == '.') {
+            if (ncomp <= 0)
+                return 0; /* tentaria escapar da sandbox */
+            ncomp--;
+            continue;
+        }
+        if (ncomp >= ZVCOMP_MAX)
+            return 0;
+        strncpy(comps[ncomp], c, ZVCOMP_LEN - 1);
+        comps[ncomp][ZVCOMP_LEN - 1] = '\0';
+        ncomp++;
+    }
+
+    /* Alias estilo Zeemu: fs:/~ e fs:/~0xXXXXXXXX -> raiz do app */
+    if (ncomp > 0 && comps[0][0] == '~') {
+        int i;
+        for (i = 1; i < ncomp; i++)
+            strncpy(comps[i - 1], comps[i], ZVCOMP_LEN);
+        ncomp--;
+    }
+
+    snprintf(out, outsz, "%s", g_base_dir);
+    {
+        int i;
+        for (i = 0; i < ncomp; i++) {
+            size_t cur = strlen(out);
+            size_t need = cur + 1 + strlen(comps[i]) + 1;
+            if (need > outsz)
+                return 0;
+            out[cur] = '/';
+            out[cur + 1] = '\0';
+            strncat(out, comps[i], outsz - strlen(out) - 1);
+        }
+    }
+
+    return 1;
 }
 
 void zbrew_handle_file(uint32_t id) {
@@ -58,7 +157,7 @@ void zbrew_handle_file(uint32_t id) {
         int slot;
         zmem_read_cstr(g_cpu.r[1], name, sizeof(name));
 
-        if (!name_ok(name)) {
+        if (!resolve_brew_path(path, sizeof(path), name)) {
             LOGW("IFileMgr_OpenFile: nome invalido '%s'", name);
             g_cpu.r[0] = 0;
             break;
@@ -70,7 +169,6 @@ void zbrew_handle_file(uint32_t id) {
             g_cpu.r[0] = 0;
             break;
         }
-        build_path(path, sizeof(path), name);
         g_handles[slot] = fopen(path, mode ? "r+b" : "rb");
         if (!g_handles[slot] && mode)
             g_handles[slot] = fopen(path, "w+b");
@@ -101,8 +199,10 @@ void zbrew_handle_file(uint32_t id) {
     case ZT_FMGR_TEST: {
         char name[256], path[ZPATH_MAX + 260];
         zmem_read_cstr(g_cpu.r[1], name, sizeof(name));
-        if (!name_ok(name)) { g_cpu.r[0] = ZBREW_EFAILED; break; }
-        build_path(path, sizeof(path), name);
+        if (!resolve_brew_path(path, sizeof(path), name)) {
+            g_cpu.r[0] = ZBREW_EFAILED;
+            break;
+        }
         {
             FILE *f = fopen(path, "rb");
             if (f) { fclose(f); g_cpu.r[0] = ZBREW_SUCCESS; }

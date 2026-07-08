@@ -312,6 +312,12 @@ void zarm_execute(uint32_t instr) {
 
     switch (op) {
     case 0: /* data processing / mul / halfword / BX / misc */
+        if ((instr & 0x0FF000F0u) == 0x01200070u) {          /* BKPT */
+            LOGW("BKPT ARM 0x%04X em PC=0x%08X", 
+                 (unsigned)(((instr >> 4) & 0xFFF0u) | (instr & 0xFu)),
+                 g_cpu.r[REG_PC] - 8);
+            return;
+        }
         if ((instr & 0x0FFFFFF0u) == 0x012FFF10u) {          /* BX  */
             zcpu_bx(rget(instr & 0xF));
             return;

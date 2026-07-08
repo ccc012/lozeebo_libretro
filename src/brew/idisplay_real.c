@@ -4,9 +4,12 @@
  */
 #include <string.h>
 #include "brew.h"
+#include "../cpu/cpu.h"
 #include "../memory/memory.h"
 #include "../gpu/framebuffer.h"
 #include "../debug/log.h"
+
+void zbrew_mark_frame(void);
 
 /* Retorna SUCCESS(0) ou EFAILED(1) */
 #define SUCCESS 0

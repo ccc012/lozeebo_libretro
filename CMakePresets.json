@@ -1,0 +1,131 @@
+{
+  "version": 4,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 10,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "ZEEBO_BUILD_SMOKE_TEST": "OFF",
+        "ZEEBO_STRICT_WARNINGS": "OFF"
+      }
+    },
+    {
+      "name": "desktop-debug",
+      "inherits": "base",
+      "displayName": "Desktop Debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "desktop-release",
+      "inherits": "base",
+      "displayName": "Desktop Release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "desktop-smoke",
+      "inherits": "base",
+      "displayName": "Desktop Smoke Test",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ZEEBO_BUILD_SMOKE_TEST": "ON"
+      }
+    },
+    {
+      "name": "android-arm64",
+      "inherits": "base",
+      "displayName": "Android ARM64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK}/build/cmake/android.toolchain.cmake",
+        "ANDROID_ABI": "arm64-v8a",
+        "ANDROID_PLATFORM": "21"
+      }
+    },
+    {
+      "name": "android-armv7",
+      "inherits": "base",
+      "displayName": "Android ARMv7",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK}/build/cmake/android.toolchain.cmake",
+        "ANDROID_ABI": "armeabi-v7a",
+        "ANDROID_PLATFORM": "19"
+      }
+    },
+    {
+      "name": "android-x86_64",
+      "inherits": "base",
+      "displayName": "Android x86_64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK}/build/cmake/android.toolchain.cmake",
+        "ANDROID_ABI": "x86_64",
+        "ANDROID_PLATFORM": "21"
+      }
+    },
+    {
+      "name": "emscripten",
+      "inherits": "base",
+      "displayName": "Emscripten/Web",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_TOOLCHAIN_FILE": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
+      }
+    },
+    {
+      "name": "uwp",
+      "inherits": "base",
+      "displayName": "Windows UWP",
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "WindowsStore",
+        "CMAKE_SYSTEM_VERSION": "10.0",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "desktop-debug",
+      "configurePreset": "desktop-debug"
+    },
+    {
+      "name": "desktop-release",
+      "configurePreset": "desktop-release"
+    },
+    {
+      "name": "desktop-smoke",
+      "configurePreset": "desktop-smoke"
+    },
+    {
+      "name": "android-arm64",
+      "configurePreset": "android-arm64"
+    },
+    {
+      "name": "android-armv7",
+      "configurePreset": "android-armv7"
+    },
+    {
+      "name": "android-x86_64",
+      "configurePreset": "android-x86_64"
+    },
+    {
+      "name": "emscripten",
+      "configurePreset": "emscripten"
+    },
+    {
+      "name": "uwp",
+      "configurePreset": "uwp"
+    }
+  ]
+}
