@@ -11,6 +11,7 @@
  * quando o trap dispara, a maquina de estados avanca.
  */
 #include <string.h>
+#include <stdlib.h>
 #include "brew.h"
 #include "aee_ids.h"
 #include "../cpu/cpu.h"
@@ -46,6 +47,8 @@ static uint32_t g_hid_event_id = 0;
 static uint32_t g_hid_event_uid = 0;
 static bool g_hid_event_down = false;
 static bool g_hid_event_pending = false;
+static uint32_t g_shell_prefs[8];
+static uint32_t g_shell_events[8];
 
 uint32_t zboot_get_applet_object(void) {
     if (g_applet_obj)
@@ -105,6 +108,15 @@ static uint32_t g_stub_vtbl = 0;
 #define ZHID_HANDLE       0x00001234u
 #define ZHID_JOYSTICK_UID 0x0106C3FDu
 static uint32_t g_device_bitmap = 0;
+
+/* NOTA: nao rotear AEECLSID_DISPLAY_REAL para uma vtable propria com os
+ * traps ZT_DISP_* legados: o layout real do IDisplay (AEEDisplay.h, ver
+ * BrewDisplay do zeemu) tem 48 slots ([4]DrawText [6]BitBlt [7]Update
+ * [16]GetDeviceBitmap...) com assinaturas proprias. Uma vtable curta em
+ * ordem inventada faz o jogo ler alem do fim dela (lixo do heap virando
+ * "funcao"), saltar para 0x0, re-executar o entry do modulo (que zera o
+ * BSS inteiro) e descarrilhar com SP=0. O stub generico abaixo cobre o
+ * display por enquanto (GetDeviceBitmap etc. tratados por clsid+slot). */
 static uint32_t make_stub_interface(uint32_t clsid) {
     uint32_t obj = zheap_alloc(64);
     if (!g_stub_vtbl) {
@@ -208,6 +220,8 @@ void zboot_start(uint32_t entry, uint32_t applet_clsid) {
     g_hid_button_signal = 0;
     g_hid_position_signal = 0;
     g_hid_event_pending = false;
+    memset(g_shell_prefs, 0, sizeof(g_shell_prefs));
+    memset(g_shell_events, 0, sizeof(g_shell_events));
     g_applet_clsid = applet_clsid;
 
     g_shell_obj = setup_real_shell();
@@ -363,12 +377,9 @@ void zboot_tick(uint32_t elapsed_ms) {
             g_hid_event_uid = uid;
             g_hid_event_down = down;
             g_hid_event_pending = true;
-            if (callback && callback < ZMEM_HLE_BASE) {
-                LOGI("HID: uid=0x%08X down=%u callback=0x%08X",
-                     uid, down ? 1u : 0u, callback);
-                g_state = BOOT_SIGNAL_CALL;
-                guest_call(callback, user, 0, 0, 0);
-                return;
+            if (getenv("ZEEMU_TRACE_HID")) {
+                LOGI("HID: uid=0x%08X down=%u callback=0x%08X user=0x%08X",
+                     uid, down ? 1u : 0u, callback, user);
             }
         }
     }
@@ -607,7 +618,9 @@ void zbrew_handle_ishell_real(uint32_t id) {
         break;
 
     case 38: /* GetPosition */
-        g_cpu.r[0] = 1;
+        if (r2) zmem_write32(r2, 0);
+        if (r3) zmem_write32(r3, 0);
+        g_cpu.r[0] = 0;
         break;
 
     case 39: /* CheckPrivLevel */
@@ -643,14 +656,25 @@ void zbrew_handle_ishell_real(uint32_t id) {
         break;
 
     case 47: /* GetProperty */
+        if (r2 && (r1 & 7u) < 8u) zmem_write32(r2, g_shell_prefs[r1 & 7u]);
+        g_cpu.r[0] = 0;
+        break;
     case 48: /* SetProperty */
+        if ((r1 & 7u) < 8u) g_shell_prefs[r1 & 7u] = r2;
+        g_cpu.r[0] = 0;
+        break;
     case 49: /* RegisterEvent */
+        if ((r1 & 7u) < 8u) g_shell_events[r1 & 7u] = r2;
+        g_cpu.r[0] = 0;
+        break;
     case 50: /* Reset */
+        memset(g_shell_prefs, 0, sizeof(g_shell_prefs));
+        memset(g_shell_events, 0, sizeof(g_shell_events));
         g_cpu.r[0] = 0;
         break;
 
     case 51: /* AppIsInGroup */
-        g_cpu.r[0] = 0;
+        g_cpu.r[0] = (r1 == g_applet_clsid) ? 1 : 0;
         break;
 
     case 52: /* GetUpTimeMS */
@@ -684,7 +708,22 @@ void zbrew_handle_stub(uint32_t id) {
     case 1: /* Release */
         g_cpu.r[0] = 1; /* refcount */
         break;
-    case 2: /* QueryInterface */
+    case 2: /* QueryInterface (exceto IDisplay, que nao tem QI no slot 2) */
+        if (clsid == AEECLSID_DISPLAY_REAL) {
+            /* GetFontMetrics(po, font, AEEFontMetrics*, u16* ascent).
+             * Zerar metricas trava jogos: alturas/larguras viram
+             * divisores no rasterizador de texto deles. */
+            uint32_t pmet = g_cpu.r[2];
+            if (pmet) {
+                zmem_write16(pmet + 0, 12); /* nAscent */
+                zmem_write16(pmet + 2, 4);  /* nDescent */
+                zmem_write16(pmet + 4, 2);  /* nLeading */
+                zmem_write16(pmet + 6, 8);  /* nMaxCharWidth */
+            }
+            if (g_cpu.r[3]) zmem_write16(g_cpu.r[3], 12);
+            g_cpu.r[0] = 16; /* altura da fonte (ascent+descent) */
+            break;
+        }
         if (clsid == ZCLSID_DEVICE_BITMAP) {
             if (g_cpu.r[2]) zmem_write32(g_cpu.r[2], obj);
             g_cpu.r[0] = 0;
@@ -694,6 +733,21 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 1; /* EFAILED */
         break;
     case 3:
+        if (clsid == AEECLSID_DISPLAY_REAL) {
+            /* MeasureTextEx(po, font, AECHAR* psz, int nl, ...) -> R0=largura.
+             * Aproximacao 8px/char ate a fonte real existir. */
+            uint32_t psz = g_cpu.r[2];
+            int32_t nl = (int32_t)g_cpu.r[3];
+            uint32_t chars = 0;
+            if (nl > 0) {
+                chars = (uint32_t)nl;
+            } else if (psz) {
+                while (chars < 256 && zmem_read16(psz + chars * 2))
+                    chars++;
+            }
+            g_cpu.r[0] = chars * 8;
+            break;
+        }
         if (clsid == AEECLSID_SIGNALCBFACT_R) {
             uint32_t signal = make_stub_interface(AEECLSID_SIGNALCBFACT_R);
             uint32_t pp_signal = g_cpu.r[3];

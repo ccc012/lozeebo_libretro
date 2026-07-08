@@ -22,6 +22,7 @@ void zinput_update(bool up, bool down, bool left, bool right,
 
 /* Estado atual (lido pelo trap HLE) */
 uint32_t zinput_key_mask(void);
+uint32_t zinput_key_down(void);
 
 /* Teclas que mudaram desde o frame anterior (para eventos EVT_KEY) */
 uint32_t zinput_pressed(void);   /* transicao 0->1 */

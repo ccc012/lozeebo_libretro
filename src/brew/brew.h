@@ -67,19 +67,26 @@ enum ztrap_id {
     ZT_BMP_GETINFO = 0x52,  /* R0=this R1=ptr_info(w,h)          */
     ZT_BMP_BLT     = 0x53,  /* R0=this R1=x R2=y                 */
 
-    /* IFileMgr (vtable) */
+    /* IFileMgr (vtable, ordem AEEFile.h) */
     ZT_FMGR_ADDREF   = 0x60,
     ZT_FMGR_RELEASE  = 0x61,
-    ZT_FMGR_OPENFILE = 0x62, /* R0=this R1=nome R2=modo -> R0=IFile ou 0 */
+    ZT_FMGR_OPENFILE = 0x62, /* R0=this R1=nome R2=modo OFM -> R0=IFile ou 0 */
     ZT_FMGR_TEST     = 0x63, /* R0=this R1=nome -> R0=0 se existe */
     ZT_FMGR_REMOVE   = 0x64,
+    ZT_FMGR_GETINFO  = 0x65, /* R0=this R1=nome R2=FileInfo*      */
+    ZT_FMGR_MKDIR    = 0x66, /* R0=this R1=nome                   */
+    ZT_FMGR_STUB     = 0x67, /* slots reais sem implementacao: loga e falha */
 
-    /* IFile (vtable) */
-    ZT_FILE_ADDREF  = 0x70,
-    ZT_FILE_RELEASE = 0x71,  /* fecha o arquivo                   */
-    ZT_FILE_READ    = 0x72,  /* R0=this R1=buf R2=len -> R0=lidos */
-    ZT_FILE_WRITE   = 0x73,
-    ZT_FILE_SEEK    = 0x74,  /* R0=this R1=origem R2=offset       */
+    /* IFile (vtable, ordem AEEFile.h: herda IAStream) */
+    ZT_FILE_ADDREF   = 0x70,
+    ZT_FILE_RELEASE  = 0x71, /* fecha o arquivo                   */
+    ZT_FILE_READ     = 0x72, /* R0=this R1=buf R2=len -> R0=lidos */
+    ZT_FILE_WRITE    = 0x73,
+    ZT_FILE_SEEK     = 0x74, /* R0=this R1=tipo(0=ini 1=fim 2=atual) R2=offset */
+    ZT_FILE_READABLE = 0x75, /* R0=this R1=AEECallback* (ignorado) */
+    ZT_FILE_CANCEL   = 0x76,
+    ZT_FILE_GETINFO  = 0x77, /* R0=this R1=FileInfo*              */
+    ZT_FILE_STUB     = 0x78, /* Truncate/GetInfoEx/SetCacheSize/Map */
 
     /* ISound (vtable) */
     ZT_SND_ADDREF    = 0x80,
@@ -156,6 +163,7 @@ void zbrew_handle_display(uint32_t id);
 void zbrew_handle_bitmap(uint32_t id);
 void zbrew_handle_file(uint32_t id);
 uint32_t zbrew_create_filemgr(void);
+uint32_t zbrew_make_idisplay_real(void);
 void zbrew_handle_sound(uint32_t id);
 
 /* Diretorio base para IFile (setado pelo loader com a pasta da ROM) */

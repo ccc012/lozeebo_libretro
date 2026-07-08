@@ -73,7 +73,8 @@ void ztrace_dump(void);
 
 static void log_bad_access(const char *what, uint32_t addr) {
     if (g_bad_access_count < BAD_ACCESS_LOG_LIMIT) {
-        LOGW("memoria: %s invalido em 0x%08X", what, addr);
+        LOGW("memoria: %s invalido em 0x%08X (PC=0x%08X LR=0x%08X SP=0x%08X)",
+             what, addr, g_cpu.r[REG_PC], g_cpu.r[REG_LR], g_cpu.r[REG_SP]);
         if (g_bad_access_count == 0)
             ztrace_dump(); /* primeiro acesso ruim: mostra o caminho ate aqui */
         g_bad_access_count++;
@@ -122,9 +123,15 @@ void zmem_write16(uint32_t addr, uint16_t val) {
 }
 
 void zmem_write32(uint32_t addr, uint32_t val) {
-    if (addr == 0x10011FB0u)
-        LOGI("watch HID user: value=0x%08X PC=0x%08X", val,
-             g_cpu.r[REG_PC] - 8);
+    if (addr >= 0x100B9F70u && addr <= 0x100B9FF0u && val != 0) {
+        static uint32_t nz_hits = 0;
+        if (nz_hits < 40) {
+            LOGI("watch write32 nz: addr=0x%08X (+0x%02X) value=0x%08X PC=0x%08X LR=0x%08X",
+                 addr, addr - 0x100B9F70u, val, g_cpu.r[REG_PC] - 8,
+                 g_cpu.r[REG_LR]);
+            nz_hits++;
+        }
+    }
     uint8_t *p = translate(addr);
     if (p && translate(addr + 3) == p + 3) {
         p[0] = (uint8_t)(val);

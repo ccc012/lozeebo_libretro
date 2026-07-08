@@ -23,6 +23,10 @@ uint32_t zinput_key_mask(void) {
     return g_keys;
 }
 
+uint32_t zinput_key_down(void) {
+    return g_keys;
+}
+
 uint32_t zinput_pressed(void) {
     return g_keys & ~g_prev_keys;
 }

@@ -94,7 +94,7 @@ void retro_get_system_info(struct retro_system_info *info) {
     memset(info, 0, sizeof(*info));
     info->library_name     = "Zeebo";
     info->library_version  = "0.2-cpu";
-    info->valid_extensions = "mod|mif|zip";
+    info->valid_extensions = "mod|mif|bar|ggz|zip";
     info->need_fullpath    = false;
     info->block_extract    = false;
 }
@@ -219,6 +219,8 @@ bool retro_load_game(const struct retro_game_info *info) {
     g_game_path[0] = '\0';
     if (info->path)
         snprintf(g_game_path, sizeof(g_game_path), "%s", info->path);
+    LOGI("retro_load_game: caminho='%s' tamanho=%zu",
+         g_game_path[0] ? g_game_path : "(memoria)", g_game_size);
 
     zmem_reset();
     zfb_init();

@@ -27,10 +27,12 @@ void zaudio_render(int16_t *out, uint32_t frames) {
             s = (s * (int32_t)voice->volume) / 255;
 
             /* mono -> estereo, acumula com clamp */
-            int32_t l = out[f * 2]     + s;
-            int32_t r = out[f * 2 + 1] + s;
-            if (l > 32767) l = 32767; if (l < -32768) l = -32768;
-            if (r > 32767) r = 32767; if (r < -32768) r = -32768;
+            int32_t l = (int32_t)out[f * 2] + s;
+            int32_t r = (int32_t)out[f * 2 + 1] + s;
+            if (l > 32767) l = 32767;
+            if (l < -32768) l = -32768;
+            if (r > 32767) r = 32767;
+            if (r < -32768) r = -32768;
             out[f * 2]     = (int16_t)l;
             out[f * 2 + 1] = (int16_t)r;
 

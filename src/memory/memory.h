@@ -34,13 +34,13 @@
 #define ZMEM_HLE_BASE      0xF0000000u             /* trap de APIs BREW */
 /* Fim real da janela de traps: nenhum vtable/stub deste emulador jamais
  * escreve um endereco de trap alem de ZTRAP_ADDR(ZT_MAX) (brew.h), ou
- * seja 0xF0000000+0x400*4 = 0xF0001000. Mantido aqui (em vez de incluir
+ * seja 0xF0000000+0x600*4 = 0xF0001800. Mantido aqui (em vez de incluir
  * brew.h) para nao criar dependencia circular; se ZT_MAX mudar, atualize
  * este valor tambem. PCs >= ZMEM_HLE_BASE mas fora desta janela nunca
  * podem ser um alvo de branch legitimo - sao PC corrompido e devem cair
  * no cheque de "CPU descarrilou", nao ser mascarados como chamada de API
  * nao implementada (ver zcpu_step em cpu.c). */
-#define ZMEM_HLE_END       0xF0001000u
+#define ZMEM_HLE_END       0xF0001800u
 
 bool  zmem_init(void);
 void  zmem_shutdown(void);

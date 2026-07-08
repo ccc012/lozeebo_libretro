@@ -69,6 +69,97 @@ static int ewstrncasecmp(uint32_t a, uint32_t b, uint32_t n) {
     return 0;
 }
 
+static uint32_t estrsize(uint32_t s) {
+    return estrlen(s) + 1;
+}
+
+static void estrlower(uint32_t s) {
+    uint32_t i = 0;
+    for (;;) {
+        uint8_t c = zmem_read8(s + i);
+        if (!c) break;
+        if (c >= 'A' && c <= 'Z') c = (uint8_t)(c + 32);
+        zmem_write8(s + i, c);
+        i++;
+    }
+}
+
+static void estrupper(uint32_t s) {
+    uint32_t i = 0;
+    for (;;) {
+        uint8_t c = zmem_read8(s + i);
+        if (!c) break;
+        if (c >= 'a' && c <= 'z') c = (uint8_t)(c - 32);
+        zmem_write8(s + i, c);
+        i++;
+    }
+}
+
+static uint32_t ewstrsize(uint32_t s) {
+    return (ewstrlen(s) + 1) * 2;
+}
+
+static uint32_t guest_basename(uint32_t path) {
+    uint32_t i = estrlen(path);
+    while (i > 0) {
+        uint8_t c = zmem_read8(path + i - 1);
+        if (c == '/' || c == '\\') return path + i;
+        i--;
+    }
+    return path;
+}
+
+static uint32_t guest_stribegins(uint32_t a, uint32_t b) {
+    uint32_t n = estrlen(b);
+    return estrncasecmp(a, b, n) == 0 ? 1u : 0u;
+}
+
+static void guest_strtowstr(uint32_t dst, uint32_t src, uint32_t cap_chars) {
+    uint32_t i = 0;
+    if (!dst || !cap_chars) return;
+    for (; i + 1 < cap_chars; i++) {
+        uint8_t c = zmem_read8(src + i);
+        zmem_write16(dst + i * 2, c);
+        if (!c) return;
+    }
+    zmem_write16(dst + i * 2, 0);
+}
+
+static void guest_wstrtostr(uint32_t dst, uint32_t src, uint32_t cap_bytes) {
+    uint32_t i = 0;
+    if (!dst || !cap_bytes) return;
+    for (; i + 1 < cap_bytes; i++) {
+        uint16_t c = zmem_read16(src + i * 2);
+        zmem_write8(dst + i, (uint8_t)(c & 0xFF));
+        if (!c) return;
+    }
+    zmem_write8(dst + i, 0);
+}
+
+static uint32_t guest_atoi(uint32_t s) {
+    char buf[64];
+    zmem_read_cstr(s, buf, sizeof(buf));
+    return (uint32_t)atoi(buf);
+}
+
+static uint32_t guest_strtod_bits(uint32_t s, uint32_t endptr) {
+    char buf[128];
+    char *end = NULL;
+    double d;
+    uint64_t raw;
+    zmem_read_cstr(s, buf, sizeof(buf));
+    d = strtod(buf, &end);
+    memcpy(&raw, &d, sizeof(raw));
+    if (endptr && endptr < 0xFF000000u) {
+        zmem_write32(endptr, s + (uint32_t)(end ? (end - buf) : 0));
+    }
+    return (uint32_t)raw;
+}
+
+static uint32_t guest_get_julian_date(void) {
+    return zbrew_uptime_ms() / 1000u;
+}
+
 /* mini vsnprintf sobre memoria emulada.
  * fmt em fmt_addr; argumentos comecam no indice arg_start da sequencia
  * R1,R2,R3,[SP],[SP+4]... Escreve em dst (se dst!=0) limitado a cap.
@@ -251,6 +342,17 @@ void zbrew_handle_helper(uint32_t id) {
         }
         break;
     }
+    case 0x030: /* wstrlen */
+        g_cpu.r[0] = ewstrlen(r0);
+        break;
+    case 0x040: /* strtowstr(src, dst, size_bytes) -> dst */
+        guest_strtowstr(r1, r0, r2 / 2);
+        g_cpu.r[0] = r1;
+        break;
+    case 0x044: /* wstrtostr(src, dst, size_bytes) -> dst */
+        guest_wstrtostr(r1, r0, r2);
+        g_cpu.r[0] = r1;
+        break;
     case 0x034: { /* wstrchr */
         uint32_t i = 0; uint16_t c;
         uint16_t needle = (uint16_t)r1;
@@ -317,7 +419,7 @@ void zbrew_handle_helper(uint32_t id) {
         g_cpu.r[0] = zheap_realloc(r0, r1);
         break;
     case 0x07C: /* wstrsize = bytes incluindo terminador */
-        g_cpu.r[0] = (ewstrlen(r0) + 1) * 2;
+        g_cpu.r[0] = ewstrsize(r0);
         break;
     case 0x08C: /* GetAEEVersion -> BREW 3.1 */
         g_cpu.r[0] = 0x03010000u;
@@ -348,6 +450,9 @@ void zbrew_handle_helper(uint32_t id) {
         break;
     case 0x0B4: /* GetSeconds */
         g_cpu.r[0] = zbrew_uptime_ms() / 1000;
+        break;
+    case 0x0B8: /* GetJulianDate */
+        g_cpu.r[0] = guest_get_julian_date();
         break;
     case 0x0C0: /* GetAppInstance */
         g_cpu.r[0] = zboot_get_applet_object();
@@ -534,26 +639,12 @@ void zbrew_handle_helper(uint32_t id) {
         break;
     }
     case 0x114: { /* strlower */
-        uint32_t i = 0;
-        for (;;) {
-            uint8_t c = zmem_read8(r0 + i);
-            if (!c) break;
-            if (c >= 'A' && c <= 'Z') c = (uint8_t)(c + 32);
-            zmem_write8(r0 + i, c);
-            i++;
-        }
+        estrlower(r0);
         g_cpu.r[0] = r0;
         break;
     }
     case 0x118: { /* strupper */
-        uint32_t i = 0;
-        for (;;) {
-            uint8_t c = zmem_read8(r0 + i);
-            if (!c) break;
-            if (c >= 'a' && c <= 'z') c = (uint8_t)(c - 32);
-            zmem_write8(r0 + i, c);
-            i++;
-        }
+        estrupper(r0);
         g_cpu.r[0] = r0;
         break;
     }
@@ -639,19 +730,64 @@ void zbrew_handle_helper(uint32_t id) {
     case 0x188: /* getlasterror */
         g_cpu.r[0] = 0;
         break;
+    case 0x190: /* dbgevent */
+        break;
     case 0x194: /* IsBadPtr -> 0 (ponteiro ok) */
         g_cpu.r[0] = 0;
         break;
     case 0x198: { /* basename */
-        uint32_t i = estrlen(r0);
-        g_cpu.r[0] = r0;
-        while (i > 0) {
-            uint8_t c = zmem_read8(r0 + i - 1);
-            if (c == '/' || c == '\\') { g_cpu.r[0] = r0 + i; break; }
-            i--;
-        }
+        g_cpu.r[0] = guest_basename(r0);
         break;
     }
+    case 0x0A0: /* wstrcompress */
+    case 0x0A4: /* LocalTimeOffset */
+        g_cpu.r[0] = 0;
+        break;
+    case 0x0E4: /* strexpand */
+    case 0x0EC: /* memstr */
+        g_cpu.r[0] = 0;
+        break;
+    case 0x128: /* inet_aton */
+        g_cpu.r[0] = 0;
+        break;
+    case 0x134: /* GetFSFree */
+        g_cpu.r[0] = 64u * 1024u * 1024u / 2u;
+        break;
+    case 0x148: /* JulianToSeconds */
+        g_cpu.r[0] = r0 * 86400u;
+        break;
+    case 0x15C: /* setstaticptr */
+    case 0x160: /* f_assignstr */
+    case 0x164: /* f_assignint */
+    case 0x168: /* wwritelong */
+    case 0x16C: /* dbgheapmark */
+    case 0x170: /* lockmem */
+    case 0x174: /* unlockmem */
+    case 0x178: /* dumpheap */
+        g_cpu.r[0] = 0;
+        break;
+    case 0x17C: /* strtod */
+        g_cpu.r[0] = guest_strtod_bits(r0, r1);
+        break;
+    case 0x180: /* f_calc */
+        g_cpu.r[0] = 0;
+        break;
+    case 0x18C: /* wgs84_to_degrees */
+        g_cpu.r[0] = 0;
+        break;
+    case 0x19C: /* makepath */
+    case 0x1A0: /* splitpath */
+    case 0x1B0: /* f_get */
+    case 0x1B4: /* qsort */
+    case 0x1B8: /* trunc */
+    case 0x1BC: /* utrunc */
+    case 0x1C0: /* err_realloc */
+    case 0x1C4: /* err_strdup */
+    case 0x1C8: /* inet_pton */
+    case 0x1CC: /* inet_ntop */
+    case 0x1D0: /* GetALSContext */
+        g_cpu.r[0] = 0;
+        break;
     default: {
         static uint32_t warn_count = 0;
         if (warn_count < 64) {

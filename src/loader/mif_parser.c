@@ -35,6 +35,10 @@ static uint32_t scan_file_for_clsid(const char *path) {
 
 static uint32_t clsid_from_path_hint(const char *mod_path) {
     if (!mod_path) return 0;
+    if (strstr(mod_path, "Zeebo Family Pack") || strstr(mod_path, "family_pack") ||
+        strstr(mod_path, "family-pack") || strstr(mod_path, "FAMILYPACK")) {
+        return 0x010903C6u;
+    }
     if (strstr(mod_path, "Pac-Mania") || strstr(mod_path, "pacmania") ||
         strstr(mod_path, "PAC-MANIA") || strstr(mod_path, "PACMANIA")) {
         return 0x01087B72u;
@@ -42,6 +46,18 @@ static uint32_t clsid_from_path_hint(const char *mod_path) {
     if (strstr(mod_path, "Double Dragon") || strstr(mod_path, "doubledragon") ||
         strstr(mod_path, "DOUBLE DRAGON")) {
         return 0x0102F789u;
+    }
+    if (strstr(mod_path, "Quake II") || strstr(mod_path, "quake2") ||
+        strstr(mod_path, "QUAKE2") || strstr(mod_path, "QUAKE II")) {
+        return 0x01087C1Cu;
+    }
+    if (strstr(mod_path, "Quake") || strstr(mod_path, "quake") ||
+        strstr(mod_path, "QUAKE")) {
+        return 0x01087A3Cu;
+    }
+    if (strstr(mod_path, "Z-Wheel") || strstr(mod_path, "zwheel") ||
+        strstr(mod_path, "Z_WHEEL")) {
+        return 0x01070798u;
     }
     return 0;
 }
