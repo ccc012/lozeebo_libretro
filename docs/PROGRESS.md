@@ -61,3 +61,9 @@
 - Modulos implementados: 27 arquivos .c/.h (~3500 linhas)
 - Instrucoes ARM: cobertura completa do conjunto basico ARMv6 user-mode
 - Performance: 60 MIPS no interpretador (Release x64)
+
+## Atualizacao de documentacao
+- [x] Status antigo de "skeleton" mantido apenas como historico
+- [x] Base funcional atual descrita em README e docs principais
+- [x] Licenca documentada como GPLv3
+- [x] Fontes de referencia e possiveis codigos reutilizados registradas em documento proprio

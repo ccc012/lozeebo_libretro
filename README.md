@@ -3,8 +3,8 @@
 **Emulador de código aberto para o console Zeebo, compatível com LibRetro/RetroArch**
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![License](https://img.shields.io/badge/license-MIT-blue)]()
-[![Phase](https://img.shields.io/badge/phase-0%20--%20Skeleton-yellow)]()
+[![License](https://img.shields.io/badge/license-GPLv3-blue)]()
+[![Phase](https://img.shields.io/badge/phase-advanced%20HLE%20core-orange)]()
 
 ---
 
@@ -22,16 +22,16 @@ O Zeebo foi um console Java-based lançado pela Samsung em 2009. Este projeto im
 
 ## 🚀 Status Atual
 
-**Fase 0: Setup & Skeleton** ✅
+**Base funcional avançada do core Zeebo** ✅
 
 - [x] Estrutura de pastas
 - [x] Header LibRetro obtido
-- [x] Skeleton core (28 funções) implementado
-- [x] Build system configurado
-- [x] Compilação bem-sucedida
-- [x] Documentação completa
+- [x] Core LibRetro integrado com CPU, memória, BREW, loader, input, áudio e vídeo
+- [x] ROMs de teste e ROMs reais de referência presentes
+- [x] Documentação de arquitetura e estratégia consolidada
+- [ ] Build validado nesta máquina ainda bloqueado pelo SDK do Windows no ambiente atual
 
-**Próxima**: Fase 1 - CPU ARM (em breve)
+**Próximo**: compilar fora do bloqueio de SDK e fechar a auditoria técnica módulo por módulo
 
 ---
 
@@ -63,6 +63,15 @@ make install            # Instalar
 
 **Mais detalhes**: `docs/TESTE_RETROARCH.md`
 
+## Licença e reutilização
+
+O repositório está sob **GPLv3**. O projeto também pode incorporar código, ideias, adaptações ou trechos derivados de outros projetos compatíveis com a licença e com seus respectivos avisos de origem.
+
+Fontes de referência já mencionadas no trabalho:
+- Infuse
+- Zeemu
+- outros projetos e referências que forem adicionados conforme a auditoria avançar
+
 ---
 
 ## 📂 Estrutura
@@ -91,4 +100,4 @@ Veja `docs/` para:
 
 ## 📄 Licença
 
-MIT License
+GPLv3

@@ -1,6 +1,6 @@
-# ?? ZEEBO LIBRETRO - SKELETON FINAL REPORT
+Ôªø# ?? ZEEBO LIBRETRO - SKELETON FINAL REPORT
 
-## ? STATUS: COMPLETO E COMPILADO
+## ? STATUS: BASE AVANCADA DOCUMENTADA
 
 ```
 ???????????????????????????????????????????????????????????
@@ -12,18 +12,18 @@
 
 ---
 
-## ?? ESTATÕSTICAS FINAIS
+## ?? ESTAT√çSTICAS FINAIS
 
-| MÈtrica | Valor |
+| M√©trica | Valor |
 |---------|-------|
-| **Arquivos C** | 27 (1 com cÛdigo, 26 vazios) |
-| **Arquivos H** | 5 (1 oficial libretro.h, 4 vazios) |
-| **Linhas de CÛdigo** | 220+ em libretro_core.c |
-| **FunÁıes Implementadas** | 28/28 (100%) |
-| **Warnings** | 0 |
-| **Errors** | 0 |
-| **DLL Gerada** | 12.3 KB |
-| **Documentos** | 7 (.md + .py + .ps1) |
+| **Arquivos C** | 30+ (core, CPU, mem√≥ria, loader, BREW, GPU, √°udio, input, debug) |
+| **Arquivos H** | 10+ |
+| **Linhas de C√≥digo** | milhares em subsistemas j√° preenchidos |
+| **Fun√ß√µes Implementadas** | base avan√ßada em m√∫ltiplos m√≥dulos |
+| **Warnings** | n√£o verificado nesta m√°quina |
+| **Errors** | build bloqueado pelo SDK do Windows no ambiente atual |
+| **DLL Gerada** | refer√™ncia antiga mantida apenas como hist√≥rico |
+| **Documentos** | 14 docs de arquitetura + notas auxiliares |
 
 ---
 
@@ -67,17 +67,17 @@ zeebo_libretro/
 ?   ??? ?? roms/ ............................ ? Vazio (para ROMs)
 ??? ?? docs/
 ?   ??? PROGRESS.md .......................... ? Progresso semanal
-?   ??? NOTES.md ............................ ? Notas tÈcnicas
+?   ??? NOTES.md ............................ ? Notas t√©cnicas
 ?   ??? ARM_NOTES.md ......................... ? Notas ARM
 ?   ??? BREW_NOTES.md ........................ ? Notas BREW
 ?   ??? SKELETON_CHECKLIST.md ................ ? Checklist
-?   ??? SKELETON_RESUMO.md ................... ? Sum·rio
+?   ??? SKELETON_RESUMO.md ................... ? Sum√°rio
 ?   ??? TESTE_RETROARCH.md ................... ? Guia de teste
 ?   ??? status_report.ps1 .................... ? Script de status
 ??? ?? build/ .............................. ? Vazio (build output)
 ??? ?? x64/
 ?   ??? ?? Debug/
-?   ?   ??? zeebo_libretro.dll ............... ? Vers„o debug
+?   ?   ??? zeebo_libretro.dll ............... ? Vers√£o debug
 ?   ??? ?? Release/
 ?       ??? zeebo_libretro.dll ............... ? 12.3 KB (USAR ESTA)
 ?       ??? zeebo_libretro.lib ............... ? Import library
@@ -101,10 +101,10 @@ Legend:
 ### 1. **Localizar Pasta de Cores**
 
 ```powershell
-# OpÁıes comuns no Windows:
-C:\RetroArch\cores\                    # InstalaÁ„o port·til
-C:\Program Files\RetroArch\cores\      # InstalaÁ„o padr„o
-%APPDATA%\RetroArch\cores\             # InstalaÁ„o usu·rio
+# Op√ß√µes comuns no Windows:
+C:\RetroArch\cores\                    # Instala√ß√£o port√°til
+C:\Program Files\RetroArch\cores\      # Instala√ß√£o padr√£o
+%APPDATA%\RetroArch\cores\             # Instala√ß√£o usu√°rio
 ```
 
 ### 2. **Copiar DLL**
@@ -120,7 +120,7 @@ RetroArch ? Load Core ? buscar "Zeebo"
 Deve aparecer: "Zeebo - 0.1-skeleton"
 ```
 
-### 4. **Carregar Conte˙do Fake**
+### 4. **Carregar Conte√∫do Fake**
 
 ```powershell
 # Criar arquivo fake
@@ -134,19 +134,19 @@ Deve aparecer: "Zeebo - 0.1-skeleton"
 
 ---
 
-## ?? PR”XIMAS FASES
+## ?? PR√ìXIMAS FASES
 
 ### ? Fase 1: CPU ARM (2-3 semanas)
 ```
 Arquivos a implementar:
 ??? src/cpu/cpu.h              (estrutura da CPU)
-??? src/cpu/cpu.c              (inicializaÁ„o + cpu_step)
+??? src/cpu/cpu.c              (inicializa√ß√£o + cpu_step)
 ??? src/cpu/decode.c           (decodificador)
 ??? src/cpu/execute_arm.c      (executor ARM)
 ??? src/cpu/execute_thumb.c    (executor Thumb)
 
 Testes:
-??? tests/test_cpu.c           (testes unit·rios)
+??? tests/test_cpu.c           (testes unit√°rios)
 ??? Integrar com retro_run()
 ```
 
@@ -158,7 +158,7 @@ Arquivos a implementar:
 ??? src/loader/bar_parser.c
 ```
 
-### ? Fase 3: HLE APIs + RenderizaÁ„o (3+ semanas)
+### ? Fase 3: HLE APIs + Renderiza√ß√£o (3+ semanas)
 ```
 BREW APIs:
 ??? src/brew/ishell.c
@@ -166,7 +166,7 @@ BREW APIs:
 ??? src/brew/isound.c
 ??? etc.
 
-Gr·ficos:
+Gr√°ficos:
 ??? src/gpu/framebuffer.c
 ??? src/gpu/draw.c
 ```
@@ -175,11 +175,11 @@ Gr·ficos:
 
 ## ?? DICAS IMPORTANTES
 
-1. **Comece pequeno**: Implemente UMA instruÁ„o ARM de cada vez
-2. **Teste frequentemente**: Compile e teste apÛs cada mudanÁa
+1. **Comece pequeno**: Implemente UMA instru√ß√£o ARM de cada vez
+2. **Teste frequentemente**: Compile e teste ap√≥s cada mudan√ßa
 3. **Use debug**: Adicione `printf()` em `retro_run()` para debug
 4. **Documente**: Preencha `docs/ARM_NOTES.md` conforme aprende
-5. **Commits**: FaÁa commits pequenos e frequentes no Git
+5. **Commits**: Fa√ßa commits pequenos e frequentes no Git
 
 ---
 
@@ -187,23 +187,23 @@ Gr·ficos:
 
 - [x] Estrutura de pastas
 - [x] Headers LibRetro
-- [x] Skeleton core (28 funÁıes)
+- [x] Skeleton core (28 fun√ß√µes)
 - [x] Build system (Makefile + MSBuild)
-- [x] CompilaÁ„o bem-sucedida
+- [x] Compila√ß√£o bem-sucedida
 - [x] DLL gerada (12.3 KB)
-- [x] DocumentaÁ„o completa
-- [ ] **PR”XIMO**: Teste no RetroArch
+- [x] Documenta√ß√£o completa
+- [ ] **PR√ìXIMO**: Teste no RetroArch
 - [ ] **DEPOIS**: Implementar CPU ARM
 
 ---
 
-## ?? ARQUIVOS DE REFER NCIA
+## ?? ARQUIVOS DE REFER√äNCIA
 
 ```
 Principais:
 ??? docs/SKELETON_CHECKLIST.md   ? Rastreamento detalhado
 ??? docs/TESTE_RETROARCH.md      ? Como testar
-??? docs/SKELETON_RESUMO.md      ? Sum·rio visual
+??? docs/SKELETON_RESUMO.md      ? Sum√°rio visual
 ??? docs/PROGRESS.md             ? Timeline do projeto
 
 Leitura:
@@ -215,19 +215,10 @@ Leitura:
 
 ---
 
-## ?? CONCLUS√O
+## ?? CONCLUS√ÉO
 
-**?? SKELETON COMPLETO**
-**?? COMPILADO SEM ERROS**
-**?? DLL PRONTA PARA RETROARCH**
-**?? DOCUMENTA«√O COMPLETA**
+**?? BASE AVAN√áADA EM ANDAMENTO**
+**?? DOCUMENTA√á√ÉO AMPLIADA**
+**?? LICEN√áA ALINHADA COMO GPLv3**
 
-O caminho est· aberto para a **Fase 1: CPU ARM**!
-
-**PrÛximo passo**: Copie a DLL e teste no RetroArch.
-
----
-
-*RelatÛrio gerado em: 07/07/2026 12:51*
-*Projeto: Zeebo LibRetro Emulator*
-*Status: Fase 0 ConcluÌda ?*
+O pr√≥ximo passo agora √© validar a compila√ß√£o nesta m√°quina ou em um ambiente sem o bloqueio do SDK do Windows, e ent√£o continuar a auditoria m√≥dulo por m√≥dulo.

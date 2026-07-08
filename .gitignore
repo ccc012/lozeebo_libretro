@@ -361,3 +361,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Local Infuse reference package. Its package license forbids third-party
+# redistribution; independently licensed assets must be copied deliberately
+# with their own license notices if they are ever adopted.
+infuse_zeebo_emulator_tuxality_a1_windows_x86_64/
