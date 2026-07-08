@@ -147,6 +147,7 @@ void zbrew_handle_memory(uint32_t id);
 void zbrew_handle_display(uint32_t id);
 void zbrew_handle_bitmap(uint32_t id);
 void zbrew_handle_file(uint32_t id);
+uint32_t zbrew_create_filemgr(void);
 void zbrew_handle_sound(uint32_t id);
 
 /* Diretorio base para IFile (setado pelo loader com a pasta da ROM) */
@@ -163,6 +164,7 @@ void     zbrew_handle_helper(uint32_t id); /* dispatch trap 0x100+ */
 /* Inicia o boot: chama AEEMod_Load do modulo carregado.
  * entry: endereco de entrada; clsid: applet a criar (0 = desconhecido) */
 void zboot_start(uint32_t entry, uint32_t applet_clsid);
+uint32_t zboot_get_applet_object(void);
 /* Trap ZT_GUEST_RETURN: avanca a maquina de estados */
 void zboot_on_guest_return(void);
 /* Chamado por frame: dispara timers vencidos (IShell_SetTimer) */

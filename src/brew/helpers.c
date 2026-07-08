@@ -290,6 +290,17 @@ void zbrew_handle_helper(uint32_t id) {
     case 0x0B4: /* GetSeconds */
         g_cpu.r[0] = zbrew_uptime_ms() / 1000;
         break;
+    case 0x0C0: /* GetAppInstance */
+        g_cpu.r[0] = zboot_get_applet_object();
+        if (g_cpu.r[0]) {
+            LOGI("GetAppInstance -> 0x%08X fields: +0=0x%08X +4=0x%08X "
+                 "+8=0x%08X +C=0x%08X +10=0x%08X +14=0x%08X +18=0x%08X",
+                 g_cpu.r[0], zmem_read32(g_cpu.r[0]),
+                 zmem_read32(g_cpu.r[0] + 4), zmem_read32(g_cpu.r[0] + 8),
+                 zmem_read32(g_cpu.r[0] + 12), zmem_read32(g_cpu.r[0] + 16),
+                 zmem_read32(g_cpu.r[0] + 20), zmem_read32(g_cpu.r[0] + 24));
+        }
+        break;
     case 0x0C8: { /* strncpy */
         uint32_t i;
         uint8_t c = 1;

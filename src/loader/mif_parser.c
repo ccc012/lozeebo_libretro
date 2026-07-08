@@ -33,12 +33,34 @@ static uint32_t scan_file_for_clsid(const char *path) {
     return 0;
 }
 
+static uint32_t clsid_from_path_hint(const char *mod_path) {
+    if (!mod_path) return 0;
+    if (strstr(mod_path, "Pac-Mania") || strstr(mod_path, "pacmania") ||
+        strstr(mod_path, "PAC-MANIA") || strstr(mod_path, "PACMANIA")) {
+        return 0x01087B72u;
+    }
+    if (strstr(mod_path, "Double Dragon") || strstr(mod_path, "doubledragon") ||
+        strstr(mod_path, "DOUBLE DRAGON")) {
+        return 0x0102F789u;
+    }
+    return 0;
+}
+
 uint32_t zmif_find_applet_clsid(const char *mod_path) {
     char candidate[1024];
     uint32_t clsid;
     const char *sep, *s1, *s2;
 
     if (!mod_path) return 0;
+
+    {
+        uint32_t hinted = clsid_from_path_hint(mod_path);
+        if (hinted) {
+            LOGI("mif: clsid inferido por nome de caminho 0x%08X em %s",
+                 hinted, mod_path);
+            return hinted;
+        }
+    }
 
     /* 1. O proprio MOD costuma conter o CLSID (AEEAppInfo estatico) */
     clsid = scan_file_for_clsid(mod_path);
