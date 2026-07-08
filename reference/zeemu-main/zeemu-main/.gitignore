@@ -1,0 +1,9 @@
+build
+.idea
+roms
+/notes.txt
+firmware
+/Zeemu.exe
+/*.dll
+/*.log
+# Everything under logs/ is ignored via logs/.gitignore (keeps the dir tracked).
