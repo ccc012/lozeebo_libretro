@@ -4,6 +4,7 @@
 #include "../cpu/cpu.h"
 #include "../memory/memory.h"
 #include "../gpu/framebuffer.h"
+#include "../gpu/egl_gl.h"
 #include "../debug/log.h"
 
 
@@ -106,6 +107,10 @@ static void trap_dispatch(uint32_t addr) {
             zbrew_handle_ishell_real(id);
         else if (id >= ZT_STUB_BASE && id <= ZT_STUB_END)
             zbrew_handle_stub(id);
+        else if (id >= ZT_EGL_BASE && id <= ZT_EGL_END)
+            zegl_handle(id - ZT_EGL_BASE);
+        else if (id >= ZT_GL_BASE && id <= ZT_GL_END)
+            zgl_handle(id - ZT_GL_BASE);
         else if (id >= ZT_SHELL_ADDREF && id <= ZT_SHELL_GETUPTIMEMS)
             zbrew_handle_shell(id);
         else if (id >= ZT_DISP_ADDREF && id <= ZT_DISP_BITBLT)
@@ -141,6 +146,7 @@ bool zbrew_init(void) {
     };
     g_shell_ptr = zbrew_make_interface(shell_vtbl, 6, 0);
     if (!g_shell_ptr) return false;
+    if (!zegl_init()) return false;
 
     zcpu_set_trap_handler(trap_dispatch);
     g_frame_ready = false;
@@ -155,8 +161,10 @@ void zbrew_reset(void) {
     g_uptime_ms = 0;
     g_unimpl_count = 0;
     g_brew_draw_color = 0xFFFFFFFFu;
+    zegl_init();
 }
 
 void zbrew_shutdown(void) {
+    zegl_shutdown();
     g_shell_ptr = 0;
 }

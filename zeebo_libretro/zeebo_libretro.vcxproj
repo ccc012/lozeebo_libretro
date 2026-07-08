@@ -25,6 +25,7 @@
     <ClInclude Include="..\src\memory\memory.h" />
     <ClInclude Include="..\src\cpu\cpu.h" />
     <ClInclude Include="..\src\cpu\decode.h" />
+    <ClInclude Include="..\src\gpu\egl_gl.h" />
     <ClInclude Include="..\src\gpu\framebuffer.h" />
     <ClInclude Include="..\src\audio\audio.h" />
     <ClInclude Include="..\src\audio\audio_internal.h" />
@@ -46,6 +47,7 @@
     <ClCompile Include="..\src\cpu\execute_thumb.c" />
     <ClCompile Include="..\src\gpu\framebuffer.c" />
     <ClCompile Include="..\src\gpu\draw.c" />
+    <ClCompile Include="..\src\gpu\egl_gl.c" />
     <ClCompile Include="..\src\audio\audio.c" />
     <ClCompile Include="..\src\audio\mixer.c" />
     <ClCompile Include="..\src\audio\pcm.c" />
@@ -187,6 +189,7 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>
+
 
 
 

@@ -1,4 +1,5 @@
 /* execute_thumb.c - Executor de instrucoes Thumb 16-bit
+/* execute_thumb.c - Executor de instrucoes Thumb 16-bit
  *
  * Todos os 19 formatos classicos + extensoes ARMv6 comuns
  * (SXTB/SXTH/UXTB/UXTH/REV) que compiladores BREW emitem.
@@ -47,6 +48,18 @@ void zthumb_execute(uint16_t instr) {
             }
             return;
         }
+    }
+
+    /* Hints Thumb (NOP/YIELD/WFE/WFI/SEV e similares) */
+    if ((instr & 0xFF00) == 0xBF00) {
+        return;
+    }
+
+    /* BKPT Thumb */
+    if ((instr & 0xFF00) == 0xBE00) {
+        LOGW("BKPT Thumb 0x%02X em PC=0x%08X", instr & 0xFF,
+             g_cpu.r[REG_PC] - 4);
+        return;
     }
 
     /* Formato 18: B incondicional */

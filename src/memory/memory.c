@@ -142,23 +142,53 @@ void zmem_write32(uint32_t addr, uint32_t val) {
 
 bool zmem_read_block(uint32_t addr, void *dst, uint32_t len) {
     uint8_t *p = translate(addr);
-    if (p && len > 0 && translate(addr + len - 1) == p + len - 1) {
+    uint8_t *out = (uint8_t *)dst;
+
+    if (len == 0) return true;
+
+    if (p && translate(addr + len - 1) == p + len - 1) {
         memcpy(dst, p, len);
         return true;
     }
-    log_bad_access("read_block", addr);
-    memset(dst, 0, len);
-    return false;
+
+    {
+        uint32_t i;
+        for (i = 0; i < len; i++) {
+            uint8_t *b = translate(addr + i);
+            if (!b) {
+                memset(out + i, 0, len - i);
+                log_bad_access("read_block", addr + i);
+                return false;
+            }
+            out[i] = *b;
+        }
+    }
+    return true;
 }
 
 bool zmem_write_block(uint32_t addr, const void *src, uint32_t len) {
     uint8_t *p = translate(addr);
-    if (p && len > 0 && translate(addr + len - 1) == p + len - 1) {
+    const uint8_t *in = (const uint8_t *)src;
+
+    if (len == 0) return true;
+
+    if (p && translate(addr + len - 1) == p + len - 1) {
         memcpy(p, src, len);
         return true;
     }
-    log_bad_access("write_block", addr);
-    return false;
+
+    {
+        uint32_t i;
+        for (i = 0; i < len; i++) {
+            uint8_t *b = translate(addr + i);
+            if (!b) {
+                log_bad_access("write_block", addr + i);
+                return false;
+            }
+            *b = in[i];
+        }
+    }
+    return true;
 }
 
 void zmem_read_cstr(uint32_t addr, char *dst, uint32_t maxlen) {

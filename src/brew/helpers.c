@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include "brew.h"
 #include "aee_ids.h"
 #include "../cpu/cpu.h"
@@ -42,6 +43,30 @@ static uint32_t ewstrlen(uint32_t s) {
     uint32_t n = 0;
     while (zmem_read16(s + n * 2)) n++;
     return n;
+}
+
+static int estrncasecmp(uint32_t a, uint32_t b, uint32_t n) {
+    uint32_t i;
+    for (i = 0; i < n; i++) {
+        uint8_t ca = zmem_read8(a + i), cb = zmem_read8(b + i);
+        if (ca >= 'A' && ca <= 'Z') ca += 32;
+        if (cb >= 'A' && cb <= 'Z') cb += 32;
+        if (ca != cb) return (int)ca - (int)cb;
+        if (!ca) return 0;
+    }
+    return 0;
+}
+
+static int ewstrncasecmp(uint32_t a, uint32_t b, uint32_t n) {
+    uint32_t i;
+    for (i = 0; i < n; i++) {
+        uint16_t ca = zmem_read16(a + i * 2), cb = zmem_read16(b + i * 2);
+        if (ca >= 'A' && ca <= 'Z') ca += 32;
+        if (cb >= 'A' && cb <= 'Z') cb += 32;
+        if (ca != cb) return (int)ca - (int)cb;
+        if (!ca) return 0;
+    }
+    return 0;
 }
 
 /* mini vsnprintf sobre memoria emulada.
@@ -205,6 +230,17 @@ void zbrew_handle_helper(uint32_t id) {
         g_cpu.r[0] = r0;
         break;
     }
+    case 0x028: { /* wstrcat */
+        uint32_t d = ewstrlen(r0), i = 0;
+        uint16_t c;
+        do {
+            c = zmem_read16(r1 + i * 2);
+            zmem_write16(r0 + (d + i) * 2, c);
+            i++;
+        } while (c);
+        g_cpu.r[0] = r0;
+        break;
+    }
     case 0x02C: { /* wstrcmp */
         uint32_t i = 0;
         for (;;) {
@@ -215,30 +251,53 @@ void zbrew_handle_helper(uint32_t id) {
         }
         break;
     }
-    case 0x030: /* wstrlen */
-        g_cpu.r[0] = ewstrlen(r0);
-        break;
-    case 0x040: { /* strtowstr(src, dst, size_bytes) */
-        uint32_t i = 0; uint8_t c;
-        uint32_t max = r2 / 2;
-        do {
-            c = zmem_read8(r0 + i);
-            if (i + 1 >= max) { zmem_write16(r1 + i * 2, 0); break; }
-            zmem_write16(r1 + i * 2, c);
-            i++;
-        } while (c);
-        g_cpu.r[0] = r1;
-        break;
-    }
-    case 0x044: { /* wstrtostr(src, dst, size) */
+    case 0x034: { /* wstrchr */
         uint32_t i = 0; uint16_t c;
+        uint16_t needle = (uint16_t)r1;
+        g_cpu.r[0] = 0;
         do {
             c = zmem_read16(r0 + i * 2);
-            if (i + 1 >= r2) { zmem_write8(r1 + i, 0); break; }
-            zmem_write8(r1 + i, (uint8_t)c);
+            if (c == needle) { g_cpu.r[0] = r0 + i * 2; break; }
             i++;
         } while (c);
-        g_cpu.r[0] = r1;
+        break;
+    }
+    case 0x038: { /* wstrrchr */
+        uint32_t i = 0, found = 0; uint16_t c;
+        uint16_t needle = (uint16_t)r1;
+        do {
+            c = zmem_read16(r0 + i * 2);
+            if (c == needle) found = r0 + i * 2;
+            i++;
+        } while (c);
+        g_cpu.r[0] = found;
+        break;
+    }
+    case 0x03C: /* wsprintf(dst,fmt,...) */
+        g_cpu.r[0] = eformat(r0, 0x10000, r1, 2, NULL, 0);
+        break;
+    case 0x058: { /* wstrlower */
+        uint32_t i = 0;
+        for (;;) {
+            uint16_t c = zmem_read16(r0 + i * 2);
+            if (!c) break;
+            if (c >= 'A' && c <= 'Z') c = (uint16_t)(c + 32);
+            zmem_write16(r0 + i * 2, c);
+            i++;
+        }
+        g_cpu.r[0] = r0;
+        break;
+    }
+    case 0x05C: { /* wstrupper */
+        uint32_t i = 0;
+        for (;;) {
+            uint16_t c = zmem_read16(r0 + i * 2);
+            if (!c) break;
+            if (c >= 'a' && c <= 'z') c = (uint16_t)(c - 32);
+            zmem_write16(r0 + i * 2, c);
+            i++;
+        }
+        g_cpu.r[0] = r0;
         break;
     }
     case 0x068: /* malloc */
@@ -301,6 +360,17 @@ void zbrew_handle_helper(uint32_t id) {
                  zmem_read32(g_cpu.r[0] + 20), zmem_read32(g_cpu.r[0] + 24));
         }
         break;
+    case 0x0C4: { /* strtoul */
+        char buf[64];
+        char *end = NULL;
+        zmem_read_cstr(r0, buf, sizeof(buf));
+        g_cpu.r[0] = (uint32_t)strtoul(buf, &end, (int)r2);
+        if (r1) {
+            uint32_t consumed = (uint32_t)(end ? (end - buf) : 0);
+            zmem_write32(r1, r0 + consumed);
+        }
+        break;
+    }
     case 0x0C8: { /* strncpy */
         uint32_t i;
         uint8_t c = 1;
@@ -333,6 +403,9 @@ void zbrew_handle_helper(uint32_t id) {
         }
         break;
     }
+    case 0x0D4: /* strnicmp */
+        g_cpu.r[0] = (uint32_t)(int32_t)estrncasecmp(r0, r1, r2);
+        break;
     case 0x0D8: { /* strstr */
         uint32_t nlen = estrlen(r1), i = 0;
         g_cpu.r[0] = 0;
@@ -364,6 +437,37 @@ void zbrew_handle_helper(uint32_t id) {
             if (zmem_read8(r0 + i) == (uint8_t)r1) { g_cpu.r[0] = r0 + i; break; }
         break;
     }
+    case 0x0E8: { /* stristr */
+        uint32_t nlen = estrlen(r1), i = 0;
+        g_cpu.r[0] = 0;
+        if (nlen == 0) { g_cpu.r[0] = r0; break; }
+        for (;;) {
+            uint8_t c = zmem_read8(r0 + i);
+            uint32_t j;
+            if (!c) break;
+            for (j = 0; j < nlen; j++) {
+                uint8_t a = zmem_read8(r0 + i + j);
+                uint8_t b = zmem_read8(r1 + j);
+                if (a >= 'A' && a <= 'Z') a += 32;
+                if (b >= 'A' && b <= 'Z') b += 32;
+                if (a != b) break;
+                if (!a) break;
+            }
+            if (j == nlen) { g_cpu.r[0] = r0 + i; break; }
+            i++;
+        }
+        break;
+    }
+    case 0x0F0: { /* wstrncmp */
+        uint32_t i;
+        g_cpu.r[0] = 0;
+        for (i = 0; i < r2; i++) {
+            uint16_t a = zmem_read16(r0 + i * 2), b = zmem_read16(r1 + i * 2);
+            if (a != b) { g_cpu.r[0] = (uint32_t)(int32_t)((int)a - (int)b); break; }
+            if (!a) break;
+        }
+        break;
+    }
     case 0x0F4: { /* strdup */
         uint32_t n = estrlen(r0) + 1;
         uint32_t d = zheap_alloc(n);
@@ -371,6 +475,94 @@ void zbrew_handle_helper(uint32_t id) {
         g_cpu.r[0] = d;
         break;
     }
+    case 0x0F8: { /* strbegins */
+        uint32_t n = estrlen(r1);
+        g_cpu.r[0] = (estrncasecmp(r0, r1, n) == 0) ? 1u : 0u;
+        break;
+    }
+    case 0x0FC: { /* strends */
+        uint32_t sl = estrlen(r0), tl = estrlen(r1);
+        if (tl > sl) g_cpu.r[0] = 0;
+        else g_cpu.r[0] = (estrncasecmp(r0 + (sl - tl), r1, tl) == 0) ? 1u : 0u;
+        break;
+    }
+    case 0x100: { /* strchrend */
+        uint32_t i = 0;
+        g_cpu.r[0] = r0 + estrlen(r0);
+        for (;;) {
+            uint8_t c = zmem_read8(r0 + i);
+            if (c == (uint8_t)r1) g_cpu.r[0] = r0 + i;
+            if (!c) break;
+            i++;
+        }
+        break;
+    }
+    case 0x104: { /* strchrsend */
+        uint32_t i = 0;
+        g_cpu.r[0] = r0 + estrlen(r0);
+        for (;;) {
+            uint8_t c = zmem_read8(r0 + i);
+            uint32_t j = 0;
+            if (!c) break;
+            while (zmem_read8(r1 + j)) {
+                if (c == zmem_read8(r1 + j)) g_cpu.r[0] = r0 + i;
+                j++;
+            }
+            i++;
+        }
+        break;
+    }
+    case 0x108: { /* memrchr */
+        uint32_t i;
+        g_cpu.r[0] = 0;
+        for (i = r2; i > 0; i--)
+            if (zmem_read8(r0 + i - 1) == (uint8_t)r1) { g_cpu.r[0] = r0 + i - 1; break; }
+        break;
+    }
+    case 0x10C: { /* memchrend */
+        uint32_t i;
+        g_cpu.r[0] = r0 + r2;
+        for (i = 0; i < r2; i++)
+            if (zmem_read8(r0 + i) == (uint8_t)r1) { g_cpu.r[0] = r0 + i; break; }
+        break;
+    }
+    case 0x110: { /* memrchrbegin */
+        uint32_t i;
+        g_cpu.r[0] = r0;
+        for (i = r2; i > 0; i--)
+            if (zmem_read8(r0 + i - 1) == (uint8_t)r1) { g_cpu.r[0] = r0 + i - 1; break; }
+        break;
+    }
+    case 0x114: { /* strlower */
+        uint32_t i = 0;
+        for (;;) {
+            uint8_t c = zmem_read8(r0 + i);
+            if (!c) break;
+            if (c >= 'A' && c <= 'Z') c = (uint8_t)(c + 32);
+            zmem_write8(r0 + i, c);
+            i++;
+        }
+        g_cpu.r[0] = r0;
+        break;
+    }
+    case 0x118: { /* strupper */
+        uint32_t i = 0;
+        for (;;) {
+            uint8_t c = zmem_read8(r0 + i);
+            if (!c) break;
+            if (c >= 'a' && c <= 'z') c = (uint8_t)(c - 32);
+            zmem_write8(r0 + i, c);
+            i++;
+        }
+        g_cpu.r[0] = r0;
+        break;
+    }
+    case 0x11C: /* wstricmp */
+        g_cpu.r[0] = (uint32_t)(int32_t)ewstrncasecmp(r0, r1, ewstrlen(r0) + 1);
+        break;
+    case 0x120: /* wstrnicmp */
+        g_cpu.r[0] = (uint32_t)(int32_t)ewstrncasecmp(r0, r1, r2);
+        break;
     case 0x12C: /* swapl */
         g_cpu.r[0] = ((r0 & 0xFF) << 24) | ((r0 & 0xFF00) << 8) |
                      ((r0 >> 8) & 0xFF00) | (r0 >> 24);
@@ -380,6 +572,9 @@ void zbrew_handle_helper(uint32_t id) {
         break;
     case 0x138: /* GetRAMFree(out_total?, out_max_block?) */
         g_cpu.r[0] = ZMEM_HEAP_SIZE - zheap_used();
+        break;
+    case 0x13C: /* vsprintf */
+        g_cpu.r[0] = eformat(r0, 0x10000, r1, 2, NULL, 0);
         break;
     case 0x140: /* vsnprintf(dst,cap,fmt,va) - va simplificado */
     case 0x144: /* snprintf(dst,cap,fmt,...) */
@@ -396,6 +591,49 @@ void zbrew_handle_helper(uint32_t id) {
         g_cpu.r[0] = estrlen(r1);
         break;
     }
+    case 0x150: { /* strlcat */
+        uint32_t dlen = estrlen(r0), slen = estrlen(r1), i = 0;
+        if (r2 <= dlen) { g_cpu.r[0] = r2 + slen; break; }
+        while (dlen + i + 1 < r2) {
+            uint8_t c = zmem_read8(r1 + i);
+            zmem_write8(r0 + dlen + i, c);
+            if (!c) break;
+            i++;
+        }
+        zmem_write8(r0 + dlen + i, 0);
+        g_cpu.r[0] = dlen + slen;
+        break;
+    }
+    case 0x154: { /* wstrlcpy */
+        uint32_t slen = ewstrlen(r1), i = 0;
+        if (r2 > 0) {
+            uint32_t capw = r2 / 2;
+            uint32_t max = capw > 0 ? capw - 1 : 0;
+            while (i < max) {
+                uint16_t c = zmem_read16(r1 + i * 2);
+                zmem_write16(r0 + i * 2, c);
+                if (!c) break;
+                i++;
+            }
+            zmem_write16(r0 + i * 2, 0);
+        }
+        g_cpu.r[0] = slen;
+        break;
+    }
+    case 0x158: { /* wstrlcat */
+        uint32_t dlen = ewstrlen(r0), slen = ewstrlen(r1), i = 0;
+        uint32_t capw = r2 / 2;
+        if (capw <= dlen) { g_cpu.r[0] = dlen + slen; break; }
+        while (dlen + i + 1 < capw) {
+            uint16_t c = zmem_read16(r1 + i * 2);
+            zmem_write16(r0 + (dlen + i) * 2, c);
+            if (!c) break;
+            i++;
+        }
+        zmem_write16(r0 + (dlen + i) * 2, 0);
+        g_cpu.r[0] = dlen + slen;
+        break;
+    }
     case 0x184: /* sleep(ms) - nop no emulador */
         break;
     case 0x188: /* getlasterror */
@@ -404,6 +642,16 @@ void zbrew_handle_helper(uint32_t id) {
     case 0x194: /* IsBadPtr -> 0 (ponteiro ok) */
         g_cpu.r[0] = 0;
         break;
+    case 0x198: { /* basename */
+        uint32_t i = estrlen(r0);
+        g_cpu.r[0] = r0;
+        while (i > 0) {
+            uint8_t c = zmem_read8(r0 + i - 1);
+            if (c == '/' || c == '\\') { g_cpu.r[0] = r0 + i; break; }
+            i--;
+        }
+        break;
+    }
     default: {
         static uint32_t warn_count = 0;
         if (warn_count < 64) {

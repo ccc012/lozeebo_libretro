@@ -2,6 +2,7 @@
 # Suporta: Linux, macOS, Windows (MSYS2/MinGW)
 
 TARGET_NAME := zeebo
+CORE_NAME := $(TARGET_NAME)_libretro
 
 # =====================================================
 # Detectar Sistema Operacional
@@ -10,29 +11,35 @@ TARGET_NAME := zeebo
 UNAME_S := $(shell uname -s)
 
 ifeq ($(UNAME_S),Linux)
-    TARGET := $(TARGET_NAME)_libretro.so
-    SHARED := -shared -Wl,--no-undefined -Wl,--version-script=src/core/link.T
+    TARGET := $(CORE_NAME).so
+    SHARED := -shared -Wl,--no-undefined
     FPIC := -fPIC
     PLATFORM := linux
 endif
 
 ifeq ($(UNAME_S),Darwin)
-    TARGET := $(TARGET_NAME)_libretro.dylib
+    TARGET := $(CORE_NAME).dylib
     SHARED := -dynamiclib
     FPIC := -fPIC
     PLATFORM := osx
 endif
 
 ifdef WINDIR
-    TARGET := $(TARGET_NAME)_libretro.dll
-    SHARED := -shared -static-libgcc -static-libstdc++
+    TARGET := $(CORE_NAME).dll
+    SHARED := -shared -static-libgcc
     FPIC :=
     PLATFORM := windows
 endif
 
 # Se não detectou nada
 ifeq ($(TARGET),)
-    $(error Plataforma não detectada. Use: make PLATFORM=linux/osx/windows)
+    $(error Plataforma nao detectada. Use Linux, macOS ou Windows/MSYS2)
+endif
+
+ifneq ($(wildcard src/core/link.T),)
+ifeq ($(PLATFORM),linux)
+SHARED += -Wl,--version-script=src/core/link.T
+endif
 endif
 
 # =====================================================
@@ -40,24 +47,45 @@ endif
 # =====================================================
 
 CC := gcc
-CFLAGS := -Wall -Wextra -O2 -g $(FPIC) -Iinclude -Isrc/core
+CFLAGS := -Wall -Wextra -O2 -g $(FPIC) -Isrc -Isrc/core
 LDFLAGS := $(SHARED)
 
 # =====================================================
 # Arquivos Fonte
 # =====================================================
 
-# Skeleton (Fase 0)
-SKELETON_SRC := src/core/libretro_core.c
-
-# CPU (Fase 1 - comentado por enquanto)
-# CPU_SRC := src/cpu/cpu.c src/cpu/decode.c src/cpu/execute_arm.c src/cpu/execute_thumb.c src/cpu/flags.c
-
-# Memory (Fase 1 - comentado por enquanto)
-# MEMORY_SRC := src/memory/memory.c src/memory/heap.c
-
-# Todos os arquivos fonte
-SOURCES := $(SKELETON_SRC)
+SOURCES := \
+	src/audio/audio.c \
+	src/audio/mixer.c \
+	src/audio/pcm.c \
+	src/brew/boot.c \
+	src/brew/brew.c \
+	src/brew/helpers.c \
+	src/brew/ibitmap.c \
+	src/brew/idisplay.c \
+	src/brew/idisplay_real.c \
+	src/brew/ifile.c \
+	src/brew/imemory.c \
+	src/brew/ishell.c \
+	src/brew/isound.c \
+	src/core/libretro_core.c \
+	src/cpu/cpu.c \
+	src/cpu/decode.c \
+	src/cpu/execute_arm.c \
+	src/cpu/execute_thumb.c \
+	src/cpu/flags.c \
+	src/debug/disasm.c \
+	src/debug/log.c \
+	src/debug/trace.c \
+	src/gpu/draw.c \
+	src/gpu/egl_gl.c \
+	src/gpu/framebuffer.c \
+	src/input/input.c \
+	src/loader/bar_parser.c \
+	src/loader/mif_parser.c \
+	src/loader/mod_loader.c \
+	src/memory/heap.c \
+	src/memory/memory.c
 
 OBJECTS := $(SOURCES:.c=.o)
 
@@ -68,63 +96,26 @@ OBJECTS := $(SOURCES:.c=.o)
 all: $(TARGET)
 
 $(TARGET): $(OBJECTS)
-    @echo "[$(PLATFORM)] Linking $(TARGET)..."
-    $(CC) $(OBJECTS) $(LDFLAGS) -o $(TARGET)
-    @echo ""
-    @echo "? Build concluído: $(TARGET)"
-    @ls -lh $(TARGET)
+	@echo "[$(PLATFORM)] Linking $(TARGET)..."
+	$(CC) $(OBJECTS) $(LDFLAGS) -o $@
 
 %.o: %.c
-    @echo "[CC] Compilando $<..."
-    $(CC) $(CFLAGS) -c $< -o $@
+	@echo "[CC] $<"
+	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-    @echo "?? Limpando objetos..."
-    rm -f $(OBJECTS)
-    @echo "? Limpo"
+	rm -f $(OBJECTS)
 
 fclean: clean
-    @echo "???  Deletando binário..."
-    rm -f $(TARGET)
-    @echo "? Completamente limpo"
+	rm -f $(TARGET)
 
 rebuild: fclean all
 
-install: $(TARGET)
-    @echo "?? Instalando em cores do RetroArch..."
-ifeq ($(PLATFORM),linux)
-    @mkdir -p ~/.config/retroarch/cores
-    @cp $(TARGET) ~/.config/retroarch/cores/
-    @echo "? Instalado em ~/.config/retroarch/cores/"
-endif
-ifeq ($(PLATFORM),osx)
-    @mkdir -p ~/Library/Application\ Support/RetroArch/cores
-    @cp $(TARGET) ~/Library/Application\ Support/RetroArch/cores/
-    @echo "? Instalado em ~/Library/Application Support/RetroArch/cores/"
-endif
-ifdef WINDIR
-    @echo "??  Para Windows, copie manualmente: $(TARGET) para C:\RetroArch\cores\"
-endif
-
 info:
-    @echo "=== Zeebo LibRetro - Build Info ==="
-    @echo "Plataforma: $(PLATFORM)"
-    @echo "Compilador: $(CC)"
-    @echo "Target: $(TARGET)"
-    @echo "Arquivos: $(SOURCES)"
-    @echo "Flags: $(CFLAGS)"
-    @echo ""
+	@echo "Plataforma: $(PLATFORM)"
+	@echo "Target: $(TARGET)"
+	@echo "Compilador: $(CC)"
+	@echo "Sources: $(words $(SOURCES)) arquivos"
 
-help:
-    @echo "Targets disponíveis:"
-    @echo "  make           - Compilar"
-    @echo "  make clean     - Limpar objetos (.o)"
-    @echo "  make fclean    - Limpar tudo (objetos + binário)"
-    @echo "  make rebuild   - Recompilar (fclean + all)"
-    @echo "  make install   - Instalar em RetroArch (Linux/Mac)"
-    @echo "  make info      - Mostrar informações de build"
-    @echo "  make help      - Mostrar esta mensagem"
-    @echo ""
-
-.PHONY: all clean fclean rebuild install info help
+.PHONY: all clean fclean rebuild info
 
