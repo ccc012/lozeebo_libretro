@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "memory.h"
+#include "../cpu/cpu.h"
 #include "../debug/log.h"
 
 static uint8_t *g_ram   = NULL;   /* codigo + dados  */
@@ -121,6 +122,9 @@ void zmem_write16(uint32_t addr, uint16_t val) {
 }
 
 void zmem_write32(uint32_t addr, uint32_t val) {
+    if (addr == 0x10011FB0u)
+        LOGI("watch HID user: value=0x%08X PC=0x%08X", val,
+             g_cpu.r[REG_PC] - 8);
     uint8_t *p = translate(addr);
     if (p && translate(addr + 3) == p + 3) {
         p[0] = (uint8_t)(val);
