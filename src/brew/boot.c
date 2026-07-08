@@ -367,13 +367,26 @@ void zbrew_handle_ishell_real(uint32_t id) {
 void zbrew_handle_stub(uint32_t id) {
     uint32_t slot = id - ZT_STUB_BASE;
     static uint32_t warn_count = 0;
-    if (warn_count < 128) {
-        LOGW("stub: metodo %u de interface 0x%08X chamado "
-             "(R1=0x%08X R2=0x%08X)", slot,
-             g_cpu.r[0] ? zmem_read32(g_cpu.r[0] + 4) : 0,
-             g_cpu.r[1], g_cpu.r[2]);
-        warn_count++;
+
+    /* Stub COM generico retorna sucesso para operacoes basicas */
+    switch (slot) {
+    case 0: /* AddRef */
+        g_cpu.r[0] = 1; /* refcount */
+        break;
+    case 1: /* Release */
+        g_cpu.r[0] = 1; /* refcount */
+        break;
+    case 2: /* QueryInterface */
+        zmem_write32(g_cpu.r[2], 0); /* ppInterface = 0 */
+        g_cpu.r[0] = 1; /* EFAILED */
+        break;
+    default:
+        /* Qualquer outro metodo: retorna sucesso (0) */
+        g_cpu.r[0] = 0;
+        if (warn_count < 32) {
+            LOGW("stub: metodo %u chamado (aceito com sucesso)", slot);
+            warn_count++;
+        }
+        break;
     }
-    /* AddRef/Release respondem 1; resto EFAILED */
-    g_cpu.r[0] = (slot <= 1) ? 1 : 1;
 }
