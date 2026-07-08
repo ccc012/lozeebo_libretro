@@ -123,13 +123,12 @@ void zmem_write16(uint32_t addr, uint16_t val) {
 }
 
 void zmem_write32(uint32_t addr, uint32_t val) {
-    if (addr >= 0x100B9F70u && addr <= 0x100B9FF0u && val != 0) {
-        static uint32_t nz_hits = 0;
-        if (nz_hits < 40) {
-            LOGI("watch write32 nz: addr=0x%08X (+0x%02X) value=0x%08X PC=0x%08X LR=0x%08X",
-                 addr, addr - 0x100B9F70u, val, g_cpu.r[REG_PC] - 8,
-                 g_cpu.r[REG_LR]);
-            nz_hits++;
+    if (addr == 0x100AF3F0u || addr == 0x100AF3ECu) {
+        static uint32_t tab_hits = 0;
+        if (tab_hits < 20) {
+            LOGI("watch tabptr write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
+                 addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
+            tab_hits++;
         }
     }
     uint8_t *p = translate(addr);

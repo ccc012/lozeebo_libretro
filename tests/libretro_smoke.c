@@ -37,6 +37,8 @@ static bool environment(unsigned command, void *data)
     return false;
 }
 
+static const char *g_dump_path; /* argv[3]: despeja o ultimo frame (PPM) */
+
 static void video(const void *data, unsigned width, unsigned height, size_t pitch)
 {
     const uint32_t first_pixel = data ? *(const uint32_t *)data : 0;
@@ -44,6 +46,26 @@ static void video(const void *data, unsigned width, unsigned height, size_t pitc
     if ((frames++ % 60) == 0)
         fprintf(stderr, "[VIDEO] %ux%u pitch=%zu first=0x%08X\n",
                 width, height, pitch, first_pixel);
+    if (g_dump_path && data) {
+        /* reescreve a cada frame; o arquivo final = ultimo frame */
+        FILE *f = fopen(g_dump_path, "wb");
+        if (f) {
+            unsigned x, y;
+            fprintf(f, "P6\n%u %u\n255\n", width, height);
+            for (y = 0; y < height; y++) {
+                const uint32_t *row = (const uint32_t *)
+                    ((const uint8_t *)data + y * pitch);
+                for (x = 0; x < width; x++) {
+                    uint8_t rgb[3];
+                    rgb[0] = (uint8_t)(row[x] >> 16);
+                    rgb[1] = (uint8_t)(row[x] >> 8);
+                    rgb[2] = (uint8_t)(row[x]);
+                    fwrite(rgb, 1, 3, f);
+                }
+            }
+            fclose(f);
+        }
+    }
 }
 
 static size_t audio_batch(const int16_t *data, size_t frames)
@@ -159,10 +181,14 @@ int main(int argc, char **argv)
     retro_unload_game_t retro_unload_game;
     retro_run_t retro_run;
 
-    if (argc != 3) {
-        fprintf(stderr, "Usage: %s core.{dll,so,dylib} game.mod\n", argv[0]);
+    if (argc < 3 || argc > 5) {
+        fprintf(stderr,
+                "Usage: %s core.{dll,so,dylib} game.mod [frame_dump.ppm]\n",
+                argv[0]);
         return 2;
     }
+    if (argc >= 4)
+        g_dump_path = argv[3];
 
     core = core_open(argv[1]);
     if (!core) {
@@ -207,7 +233,7 @@ int main(int argc, char **argv)
         return 5;
     }
 
-    for (frame = 0; frame < 180; ++frame) {
+    for (frame = 0; frame < (argc == 5 ? atoi(argv[4]) : 180); ++frame) {
         input_frame = frame;
         retro_run();
     }

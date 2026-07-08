@@ -116,6 +116,46 @@ degenerado. Proximo passo: instrumentar o lookup da tabela do scheduler (PC 0x4A
 callback de ISHELL_Resume nunca disparado). Watchpoints de debug desta cacada estao
 em cpu.c/memory.c/ifile.c (temporarios, remover quando o bug fechar).
 
+## Sessao 2026-07-08 (3): RESOLVIDO - Family Pack entra no loop de render de verdade
+
+A cacada do divisor zero fechou. Cadeia completa da causa raiz:
+
+1. O "busy-wait" era o rasterizador de software do proprio jogo dividindo por uma
+   coordenada zero. O zero vinha de elementos NULL na tabela do scheduler grafico.
+2. Os elementos eram NULL porque a fabrica de superficies do jogo (0x7BC10 via
+   0x100CC) falhava: ela depende de chamadas GL (glGenTextures, glGetIntegerv...)
+   que chegavam com **argumentos deslocados**.
+3. **Causa raiz final: convencao de chamada do wrapper GL da Qualcomm.** As funcoes
+   `gl*` da vtable IGL NAO recebem `this` - os argumentos GL comecam direto em R0
+   (confirmado no `BrewQXGLDispatch.cpp` do zeemu: `gl_arg(0)=r0`). So AddRef/
+   Release/QueryInterface (slots 0-2) seguem COM classico. Nossos handlers liam
+   this em R0 e args em R1+ -> `glGenTextures` recebia um ponteiro como contagem
+   (269 milhoes), `glGetIntegerv` recebia ponteiro como pname, etc.
+
+Corrigido em `zgl_handle()` (egl_gl.c): slots 3..79 e tabela direta usam ambos
+args a partir de R0. Resultado verificado no smoke test:
+
+- Argumentos GL perfeitos: `glGetIntegerv(GL_MAX_TEXTURE_UNITS)`, `glHint`,
+  `glClearColorx(1.0,1.0,...)`, `glGenTextures(n=2)`, `glBindTexture(GL_TEXTURE_2D,1)`,
+  `glTexImage2D`, `glTexParameterx`, `glBlendFunc`, `glAlphaFuncx`... (23 funcoes
+  GL distintas chamadas pelo jogo).
+- Os 4 elementos da fabrica de superficies nascem validos (nenhum NULL).
+- **Loop de render vivo**: `glClear(COLOR|DEPTH)` -> `glDrawArrays(GL_TRIANGLE_FAN)`
+  -> `eglSwapBuffers` repetindo frame apos frame, estado "rodando", sem crash e sem
+  stall ate o fim dos 180 frames do smoke.
+- O jogo carrega o menu inteiro do data.vfs (avatares, botoes resume/restart/quit,
+  logos dos minigames cannonball/zap, highscore...).
+
+**Proximo passo (a peca final para VIDEO de gameplay): rasterizador de software
+GLES 1.x minimo** em egl_gl.c - hoje `glDrawArrays`/`glTexImage2D` sao no-ops,
+entao a tela fica na cor do glClear (branca). Minimo viavel para o menu 2D do
+Family Pack: armazenar texturas de `glTexImage2D`, estado de `glVertexPointer`/
+`glTexCoordPointer`/`glEnableClientState`, matrizes fixed-point (LoadIdentity/
+Orthox/Translatex/Scalex), e rasterizacao de `GL_TRIANGLE_FAN` texturizado (quads
+do menu) escrevendo na VRAM. Referencia de semantica: `process_draw_call` no
+`BrewQXGLDispatch.cpp` do zeemu (1945 linhas - portar o subconjunto minimo).
+Depois do rasterizador: testar no RetroArch real e gravar o video.
+
 ## Proximos Passos (Fase 2.2/5: jogos reais)
 
 ### Bloqueio atual - Pac-Mania: SP sai da stack real e entra na VRAM durante o CreateInstance

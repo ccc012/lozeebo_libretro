@@ -4,6 +4,9 @@
  * retorna sucesso para operacoes basicas de bootstrap e sinaliza frames
  * simples no framebuffer enquanto o backend 3D real nao existe.
  */
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
 #include "egl_gl.h"
 #include "framebuffer.h"
 #include "../brew/brew.h"
@@ -54,8 +57,11 @@ static uint32_t alloc_guest_cstr(const char *s)
     return ptr;
 }
 
+static void zgl_reset_raster(void);
+
 bool zegl_init(void)
 {
+    zgl_reset_raster();
     g_egl_display = 0;
     g_egl_surface = 0;
     g_egl_context = 0;
@@ -76,6 +82,7 @@ bool zegl_init(void)
 
 void zegl_shutdown(void)
 {
+    zgl_reset_raster();
     g_egl_display = 0;
     g_egl_surface = 0;
     g_egl_context = 0;
@@ -307,6 +314,410 @@ void zegl_handle(uint32_t slot)
     }
 }
 
+/* ================= Rasterizador de software GLES 1.x ==================
+ * Subconjunto minimo para o menu 2D do Family Pack (quads texturizados
+ * via GL_TRIANGLE_FAN): texturas, vertex arrays, matrizes fixed-point e
+ * rasterizacao afim com blend. Semantica de referencia: BrewQXGLDispatch
+ * do zeemu. Sem correcao de perspectiva nem depth buffer por enquanto. */
+
+#define ZGL_MAX_TEXTURES 128
+
+typedef struct {
+    uint32_t *pix; /* host, ARGB8888 */
+    int w, h;
+} zgl_texture_t;
+
+typedef struct {
+    uint32_t addr;   /* endereco guest dos dados */
+    int      size;   /* componentes por vertice */
+    uint32_t type;   /* GL_FIXED/FLOAT/SHORT/BYTE */
+    int      stride; /* bytes; 0 = compacto */
+    bool     on;
+} zgl_varray_t;
+
+static zgl_texture_t g_textures[ZGL_MAX_TEXTURES];
+static uint32_t g_bound_tex = 0;
+static zgl_varray_t g_va_pos, g_va_tex, g_va_col;
+
+static float g_m_mv[16], g_m_pj[16];       /* column-major (padrao GL) */
+static float g_m_tx[16];                   /* GL_TEXTURE (guardada, nao aplicada) */
+static float g_stk_mv[16][16], g_stk_pj[4][16];
+static int g_mv_sp = 0, g_pj_sp = 0;
+static int g_mtx_mode = 0;                 /* 0=modelview 1=projection 2=texture */
+static float g_cur_color[4] = {1.f, 1.f, 1.f, 1.f};
+static bool g_en_tex2d = false, g_en_blend = false, g_en_alpha = false;
+
+static float *cur_mtx(void)
+{
+    if (g_mtx_mode == 1) return g_m_pj;
+    if (g_mtx_mode == 2) return g_m_tx;
+    return g_m_mv;
+}
+
+static void mtx_identity(float *m)
+{
+    memset(m, 0, 16 * sizeof(float));
+    m[0] = m[5] = m[10] = m[15] = 1.f;
+}
+
+static void mtx_mul(float *out, const float *a, const float *b)
+{
+    /* out = a * b (column-major: out[c*4+r] = sum a[k*4+r]*b[c*4+k]) */
+    float t[16];
+    int r, c, k;
+    for (c = 0; c < 4; c++)
+        for (r = 0; r < 4; r++) {
+            float s = 0.f;
+            for (k = 0; k < 4; k++)
+                s += a[k * 4 + r] * b[c * 4 + k];
+            t[c * 4 + r] = s;
+        }
+    memcpy(out, t, sizeof(t));
+}
+
+static float fx_to_f(uint32_t v) { return (float)(int32_t)v / 65536.0f; }
+
+static void mtx_load_guest_fixed(float *m, uint32_t addr)
+{
+    int i;
+    for (i = 0; i < 16; i++)
+        m[i] = fx_to_f(zmem_read32(addr + (uint32_t)i * 4));
+}
+
+static void zgl_reset_raster(void)
+{
+    int i;
+    for (i = 0; i < ZGL_MAX_TEXTURES; i++) {
+        free(g_textures[i].pix);
+        g_textures[i].pix = NULL;
+        g_textures[i].w = g_textures[i].h = 0;
+    }
+    g_bound_tex = 0;
+    memset(&g_va_pos, 0, sizeof(g_va_pos));
+    memset(&g_va_tex, 0, sizeof(g_va_tex));
+    memset(&g_va_col, 0, sizeof(g_va_col));
+    mtx_identity(g_m_mv);
+    mtx_identity(g_m_pj);
+    mtx_identity(g_m_tx);
+    g_mv_sp = g_pj_sp = 0;
+    g_mtx_mode = 0;
+    g_cur_color[0] = g_cur_color[1] = g_cur_color[2] = g_cur_color[3] = 1.f;
+    g_en_tex2d = g_en_blend = g_en_alpha = false;
+}
+
+/* Converte um upload de textura guest para ARGB8888 host.
+ * Formatos: GL_RGB 0x1907 / GL_RGBA 0x1908 / GL_LUMINANCE 0x1909 /
+ * GL_LUMINANCE_ALPHA 0x190A; tipos: UNSIGNED_BYTE 0x1401,
+ * UNSIGNED_SHORT_5_6_5 0x8363, 4_4_4_4 0x8033, 5_5_5_1 0x8034. */
+static uint32_t *convert_teximage(uint32_t src, int w, int h,
+                                  uint32_t format, uint32_t type)
+{
+    uint32_t *out;
+    int n = w * h, i;
+    if (n <= 0 || n > 4096 * 4096)
+        return NULL;
+    out = (uint32_t *)malloc((size_t)n * 4);
+    if (!out)
+        return NULL;
+
+    if (type == 0x1401u) { /* UNSIGNED_BYTE */
+        int bpp = (format == 0x1908u) ? 4 :
+                  (format == 0x1907u) ? 3 :
+                  (format == 0x190Au) ? 2 : 1;
+        for (i = 0; i < n; i++) {
+            uint32_t p = src + (uint32_t)(i * bpp);
+            uint8_t r, g, b, a = 255;
+            if (bpp >= 3) {
+                r = zmem_read8(p);
+                g = zmem_read8(p + 1);
+                b = zmem_read8(p + 2);
+                if (bpp == 4) a = zmem_read8(p + 3);
+            } else {
+                r = g = b = zmem_read8(p);
+                if (bpp == 2) a = zmem_read8(p + 1);
+            }
+            out[i] = ((uint32_t)a << 24) | ((uint32_t)r << 16) |
+                     ((uint32_t)g << 8) | b;
+        }
+    } else if (type == 0x8363u) { /* 5_6_5 */
+        for (i = 0; i < n; i++) {
+            uint16_t v = zmem_read16(src + (uint32_t)(i * 2));
+            uint32_t r = (v >> 11) & 31, g = (v >> 5) & 63, b = v & 31;
+            out[i] = 0xFF000000u | ((r << 3 | r >> 2) << 16) |
+                     ((g << 2 | g >> 4) << 8) | (b << 3 | b >> 2);
+        }
+    } else if (type == 0x8033u) { /* 4_4_4_4 */
+        for (i = 0; i < n; i++) {
+            uint16_t v = zmem_read16(src + (uint32_t)(i * 2));
+            uint32_t r = (v >> 12) & 15, g = (v >> 8) & 15,
+                     b = (v >> 4) & 15, a = v & 15;
+            out[i] = ((a * 17u) << 24) | ((r * 17u) << 16) |
+                     ((g * 17u) << 8) | (b * 17u);
+        }
+    } else if (type == 0x8034u) { /* 5_5_5_1 */
+        for (i = 0; i < n; i++) {
+            uint16_t v = zmem_read16(src + (uint32_t)(i * 2));
+            uint32_t r = (v >> 11) & 31, g = (v >> 6) & 31,
+                     b = (v >> 1) & 31, a = (v & 1) ? 255u : 0u;
+            out[i] = (a << 24) | ((r << 3 | r >> 2) << 16) |
+                     ((g << 3 | g >> 2) << 8) | (b << 3 | b >> 2);
+        }
+    } else {
+        static uint32_t warn = 0;
+        if (warn < 8) {
+            LOGW("glTexImage2D: tipo 0x%04X nao suportado", type);
+            warn++;
+        }
+        memset(out, 0xFF, (size_t)n * 4); /* branco visivel p/ debug */
+    }
+    return out;
+}
+
+static float fetch_comp(const zgl_varray_t *a, int vtx, int comp)
+{
+    int esz = (a->type == 0x1400u || a->type == 0x1401u) ? 1 :
+              (a->type == 0x1402u || a->type == 0x1403u) ? 2 : 4;
+    int stride = a->stride ? a->stride : a->size * esz;
+    uint32_t p = a->addr + (uint32_t)(vtx * stride + comp * esz);
+    switch (a->type) {
+    case 0x140Cu: return fx_to_f(zmem_read32(p));            /* FIXED */
+    case 0x1406u: {                                          /* FLOAT */
+        uint32_t bits = zmem_read32(p);
+        float f;
+        memcpy(&f, &bits, 4);
+        return f;
+    }
+    case 0x1402u: return (float)(int16_t)zmem_read16(p);     /* SHORT */
+    case 0x1403u: return (float)zmem_read16(p);              /* USHORT */
+    case 0x1400u: return (float)(int8_t)zmem_read8(p);       /* BYTE */
+    case 0x1401u: return (float)zmem_read8(p) / 255.0f;      /* UBYTE (cor) */
+    }
+    return 0.f;
+}
+
+typedef struct {
+    float sx, sy;      /* coordenadas de tela */
+    float u, v;        /* texcoord */
+    float cr, cg, cb, ca;
+} zgl_vtx_t;
+
+static bool transform_vertex(int idx, zgl_vtx_t *out)
+{
+    float in[4] = {0.f, 0.f, 0.f, 1.f};
+    float eye[4], clip[4];
+    int i;
+    for (i = 0; i < g_va_pos.size && i < 4; i++)
+        in[i] = fetch_comp(&g_va_pos, idx, i);
+    for (i = 0; i < 4; i++)
+        eye[i] = g_m_mv[0 * 4 + i] * in[0] + g_m_mv[1 * 4 + i] * in[1] +
+                 g_m_mv[2 * 4 + i] * in[2] + g_m_mv[3 * 4 + i] * in[3];
+    for (i = 0; i < 4; i++)
+        clip[i] = g_m_pj[0 * 4 + i] * eye[0] + g_m_pj[1 * 4 + i] * eye[1] +
+                  g_m_pj[2 * 4 + i] * eye[2] + g_m_pj[3 * 4 + i] * eye[3];
+    if (clip[3] <= 0.0001f && clip[3] >= -0.0001f)
+        return false;
+    {
+        float inv_w = 1.0f / clip[3];
+        float nx = clip[0] * inv_w, ny = clip[1] * inv_w;
+        out->sx = ((nx * 0.5f) + 0.5f) * (float)g_gl_viewport_w +
+                  (float)g_gl_viewport_x;
+        out->sy = ((-ny * 0.5f) + 0.5f) * (float)g_gl_viewport_h +
+                  (float)g_gl_viewport_y;
+    }
+    if (g_va_tex.on) {
+        float u = fetch_comp(&g_va_tex, idx, 0);
+        float v = fetch_comp(&g_va_tex, idx, 1);
+        /* aplica a matriz GL_TEXTURE (jogos usam para atlas de sprites) */
+        out->u = g_m_tx[0] * u + g_m_tx[4] * v + g_m_tx[12];
+        out->v = g_m_tx[1] * u + g_m_tx[5] * v + g_m_tx[13];
+    } else {
+        out->u = out->v = 0.f;
+    }
+    if (g_va_col.on) {
+        out->cr = fetch_comp(&g_va_col, idx, 0);
+        out->cg = fetch_comp(&g_va_col, idx, 1);
+        out->cb = fetch_comp(&g_va_col, idx, 2);
+        out->ca = g_va_col.size >= 4 ? fetch_comp(&g_va_col, idx, 3) : 1.f;
+        /* cores FIXED/FLOAT ja vem 0..1; SHORT viria bruto (raro) */
+    } else {
+        out->cr = g_cur_color[0];
+        out->cg = g_cur_color[1];
+        out->cb = g_cur_color[2];
+        out->ca = g_cur_color[3];
+    }
+    return true;
+}
+
+static uint32_t sample_texture(const zgl_texture_t *t, float u, float v)
+{
+    int x, y;
+    u -= floorf(u);
+    v -= floorf(v);
+    x = (int)(u * (float)t->w);
+    y = (int)(v * (float)t->h);
+    if (x >= t->w) x = t->w - 1;
+    if (y >= t->h) y = t->h - 1;
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    return t->pix[y * t->w + x];
+}
+
+static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
+                            const zgl_vtx_t *v2)
+{
+    uint32_t *fb = zfb_pixels();
+    const zgl_texture_t *tex = NULL;
+    float area, inv_area;
+    int minx, miny, maxx, maxy, x, y;
+
+    {
+        static uint32_t tri_logs = 0;
+        if (tri_logs < 6) {
+            LOGD("raster tri: (%.1f,%.1f) (%.1f,%.1f) (%.1f,%.1f) "
+                 "tex2d=%d bound=%u tem_pix=%d blend=%d cor=(%.2f %.2f %.2f %.2f)",
+                 v0->sx, v0->sy, v1->sx, v1->sy, v2->sx, v2->sy,
+                 g_en_tex2d ? 1 : 0, g_bound_tex,
+                 (g_bound_tex < ZGL_MAX_TEXTURES &&
+                  g_textures[g_bound_tex].pix) ? 1 : 0,
+                 g_en_blend ? 1 : 0,
+                 v0->cr, v0->cg, v0->cb, v0->ca);
+            tri_logs++;
+        }
+    }
+
+    if (!fb)
+        return;
+    if (g_en_tex2d && g_bound_tex < ZGL_MAX_TEXTURES &&
+        g_textures[g_bound_tex].pix)
+        tex = &g_textures[g_bound_tex];
+
+    area = (v1->sx - v0->sx) * (v2->sy - v0->sy) -
+           (v1->sy - v0->sy) * (v2->sx - v0->sx);
+    if (area > -0.0001f && area < 0.0001f)
+        return;
+    inv_area = 1.0f / area;
+
+    minx = (int)floorf(v0->sx < v1->sx ? (v0->sx < v2->sx ? v0->sx : v2->sx)
+                                       : (v1->sx < v2->sx ? v1->sx : v2->sx));
+    maxx = (int)ceilf(v0->sx > v1->sx ? (v0->sx > v2->sx ? v0->sx : v2->sx)
+                                      : (v1->sx > v2->sx ? v1->sx : v2->sx));
+    miny = (int)floorf(v0->sy < v1->sy ? (v0->sy < v2->sy ? v0->sy : v2->sy)
+                                       : (v1->sy < v2->sy ? v1->sy : v2->sy));
+    maxy = (int)ceilf(v0->sy > v1->sy ? (v0->sy > v2->sy ? v0->sy : v2->sy)
+                                      : (v1->sy > v2->sy ? v1->sy : v2->sy));
+    if (minx < 0) minx = 0;
+    if (miny < 0) miny = 0;
+    if (maxx > ZFB_WIDTH) maxx = ZFB_WIDTH;
+    if (maxy > ZFB_HEIGHT) maxy = ZFB_HEIGHT;
+
+    for (y = miny; y < maxy; y++) {
+        for (x = minx; x < maxx; x++) {
+            float px = (float)x + 0.5f, py = (float)y + 0.5f;
+            float w0 = ((v1->sx - px) * (v2->sy - py) -
+                        (v1->sy - py) * (v2->sx - px)) * inv_area;
+            float w1 = ((v2->sx - px) * (v0->sy - py) -
+                        (v2->sy - py) * (v0->sx - px)) * inv_area;
+            float w2 = 1.0f - w0 - w1;
+            float cr, cg, cb, ca;
+            uint32_t sr, sg, sb, sa, dst;
+            if (w0 < 0.f || w1 < 0.f || w2 < 0.f)
+                continue;
+            cr = w0 * v0->cr + w1 * v1->cr + w2 * v2->cr;
+            cg = w0 * v0->cg + w1 * v1->cg + w2 * v2->cg;
+            cb = w0 * v0->cb + w1 * v1->cb + w2 * v2->cb;
+            ca = w0 * v0->ca + w1 * v1->ca + w2 * v2->ca;
+            if (tex) {
+                float u = w0 * v0->u + w1 * v1->u + w2 * v2->u;
+                float v = w0 * v0->v + w1 * v1->v + w2 * v2->v;
+                uint32_t t = sample_texture(tex, u, v);
+                cr *= (float)((t >> 16) & 0xFF) / 255.f;
+                cg *= (float)((t >> 8) & 0xFF) / 255.f;
+                cb *= (float)(t & 0xFF) / 255.f;
+                ca *= (float)(t >> 24) / 255.f;
+            }
+            sa = (uint32_t)(ca * 255.f + 0.5f);
+            if (sa > 255) sa = 255;
+            if (g_en_alpha && sa == 0)
+                continue;
+            sr = (uint32_t)(cr * 255.f + 0.5f);
+            sg = (uint32_t)(cg * 255.f + 0.5f);
+            sb = (uint32_t)(cb * 255.f + 0.5f);
+            if (sr > 255) sr = 255;
+            if (sg > 255) sg = 255;
+            if (sb > 255) sb = 255;
+            if (g_en_blend && sa < 255) {
+                if (sa == 0)
+                    continue;
+                dst = fb[y * ZFB_WIDTH + x];
+                sr = (sr * sa + ((dst >> 16) & 0xFF) * (255 - sa)) / 255;
+                sg = (sg * sa + ((dst >> 8) & 0xFF) * (255 - sa)) / 255;
+                sb = (sb * sa + (dst & 0xFF) * (255 - sa)) / 255;
+            }
+            fb[y * ZFB_WIDTH + x] = 0xFF000000u | (sr << 16) | (sg << 8) | sb;
+        }
+    }
+}
+
+static void draw_prim(uint32_t mode, int count,
+                      int (*index_of)(int, uint32_t, uint32_t),
+                      uint32_t idx_addr, uint32_t idx_type)
+{
+    zgl_vtx_t first, prev, cur;
+    bool have_first = false, have_prev = false;
+    int i;
+    if (!g_va_pos.on || count < 3)
+        return;
+    {
+        static uint32_t draw_logs = 0;
+        if (draw_logs < 40) {
+            zgl_vtx_t probe;
+            int vi0 = index_of ? index_of(0, idx_addr, idx_type) : 0;
+            if (transform_vertex(vi0, &probe))
+                LOGD("draw: modo=0x%X n=%d v0=(%.1f,%.1f) uv=(%.2f,%.2f) "
+                     "tex=%u mv[12..14]=(%.1f %.1f %.1f) pj[0]=%.4f pj[5]=%.4f",
+                     mode, count, probe.sx, probe.sy, probe.u, probe.v,
+                     g_bound_tex, g_m_mv[12], g_m_mv[13], g_m_mv[14],
+                     g_m_pj[0], g_m_pj[5]);
+            else
+                LOGD("draw: modo=0x%X n=%d v0 DESCARTADO (w~0)", mode, count);
+            draw_logs++;
+        }
+    }
+    for (i = 0; i < count; i++) {
+        int vi = index_of ? index_of(i, idx_addr, idx_type) : i;
+        if (!transform_vertex(vi, &cur))
+            return;
+        if (mode == 0x0004u) { /* GL_TRIANGLES */
+            if (i % 3 == 0) { first = cur; have_first = true; }
+            else if (i % 3 == 1) { prev = cur; have_prev = true; }
+            else if (have_first && have_prev)
+                raster_triangle(&first, &prev, &cur);
+        } else if (mode == 0x0005u) { /* GL_TRIANGLE_STRIP */
+            if (i == 0) { first = cur; }
+            else if (i == 1) { prev = cur; }
+            else {
+                raster_triangle(&first, &prev, &cur);
+                first = prev;
+                prev = cur;
+            }
+        } else { /* GL_TRIANGLE_FAN (0x0006) e fallback */
+            if (i == 0) { first = cur; }
+            else if (i == 1) { prev = cur; }
+            else {
+                raster_triangle(&first, &prev, &cur);
+                prev = cur;
+            }
+        }
+    }
+}
+
+static int elem_index(int i, uint32_t addr, uint32_t type)
+{
+    if (type == 0x1403u) /* UNSIGNED_SHORT */
+        return (int)zmem_read16(addr + (uint32_t)i * 2);
+    return (int)zmem_read8(addr + (uint32_t)i); /* UNSIGNED_BYTE */
+}
+
 /* Indices 0-based das funcoes GL na ordem alfabetica da vtable real
  * (slot COM = 3 + indice; tabela direta obj[1+indice]). */
 enum zgl_fn {
@@ -380,6 +791,295 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
     case GLFN_Clear:
         zfb_clear(g_gl_clear_color);
         break;
+
+    case GLFN_MatrixMode:
+        /* 0x1700 MODELVIEW, 0x1701 PROJECTION, 0x1702 TEXTURE */
+        g_mtx_mode = (a0 == 0x1701u) ? 1 : (a0 == 0x1702u) ? 2 : 0;
+        break;
+
+    case GLFN_LoadIdentity:
+        mtx_identity(cur_mtx());
+        break;
+
+    case GLFN_LoadMatrixx:
+        if (a0) mtx_load_guest_fixed(cur_mtx(), a0);
+        break;
+
+    case GLFN_MultMatrixx:
+        if (a0) {
+            float m[16];
+            mtx_load_guest_fixed(m, a0);
+            mtx_mul(cur_mtx(), cur_mtx(), m);
+        }
+        break;
+
+    case GLFN_Orthox: {
+        /* Orthox(l,r,b,t,near,far) - near/far no stack */
+        float l = fx_to_f(a0), r = fx_to_f(a1);
+        float b = fx_to_f(a2), t = fx_to_f(a3);
+        float n = fx_to_f(zbrew_stack_arg(0));
+        float f = fx_to_f(zbrew_stack_arg(1));
+        float m[16];
+        if (r == l || t == b || f == n)
+            break;
+        mtx_identity(m);
+        m[0] = 2.f / (r - l);
+        m[5] = 2.f / (t - b);
+        m[10] = -2.f / (f - n);
+        m[12] = -(r + l) / (r - l);
+        m[13] = -(t + b) / (t - b);
+        m[14] = -(f + n) / (f - n);
+        mtx_mul(cur_mtx(), cur_mtx(), m);
+        break;
+    }
+
+    case GLFN_Frustumx: {
+        float l = fx_to_f(a0), r = fx_to_f(a1);
+        float b = fx_to_f(a2), t = fx_to_f(a3);
+        float n = fx_to_f(zbrew_stack_arg(0));
+        float f = fx_to_f(zbrew_stack_arg(1));
+        float m[16];
+        if (r == l || t == b || f == n || n <= 0.f)
+            break;
+        memset(m, 0, sizeof(m));
+        m[0] = 2.f * n / (r - l);
+        m[5] = 2.f * n / (t - b);
+        m[8] = (r + l) / (r - l);
+        m[9] = (t + b) / (t - b);
+        m[10] = -(f + n) / (f - n);
+        m[11] = -1.f;
+        m[14] = -2.f * f * n / (f - n);
+        mtx_mul(cur_mtx(), cur_mtx(), m);
+        break;
+    }
+
+    case GLFN_Translatex: {
+        float m[16];
+        mtx_identity(m);
+        m[12] = fx_to_f(a0);
+        m[13] = fx_to_f(a1);
+        m[14] = fx_to_f(a2);
+        mtx_mul(cur_mtx(), cur_mtx(), m);
+        break;
+    }
+
+    case GLFN_Scalex: {
+        float m[16];
+        mtx_identity(m);
+        m[0] = fx_to_f(a0);
+        m[5] = fx_to_f(a1);
+        m[10] = fx_to_f(a2);
+        mtx_mul(cur_mtx(), cur_mtx(), m);
+        break;
+    }
+
+    case GLFN_Rotatex: {
+        /* Rotatex(angulo_graus, x, y, z) - eixo geral normalizado */
+        float ang = fx_to_f(a0) * 3.14159265f / 180.f;
+        float x = fx_to_f(a1), y = fx_to_f(a2), z = fx_to_f(a3);
+        float len = sqrtf(x * x + y * y + z * z);
+        float c, s, ic, m[16];
+        if (len < 0.0001f)
+            break;
+        x /= len; y /= len; z /= len;
+        c = cosf(ang); s = sinf(ang); ic = 1.f - c;
+        mtx_identity(m);
+        m[0] = x * x * ic + c;     m[4] = x * y * ic - z * s; m[8]  = x * z * ic + y * s;
+        m[1] = y * x * ic + z * s; m[5] = y * y * ic + c;     m[9]  = y * z * ic - x * s;
+        m[2] = x * z * ic - y * s; m[6] = y * z * ic + x * s; m[10] = z * z * ic + c;
+        mtx_mul(cur_mtx(), cur_mtx(), m);
+        break;
+    }
+
+    case GLFN_PushMatrix:
+        if (g_mtx_mode == 0 && g_mv_sp < 16)
+            memcpy(g_stk_mv[g_mv_sp++], g_m_mv, sizeof(g_m_mv));
+        else if (g_mtx_mode == 1 && g_pj_sp < 4)
+            memcpy(g_stk_pj[g_pj_sp++], g_m_pj, sizeof(g_m_pj));
+        break;
+
+    case GLFN_PopMatrix:
+        if (g_mtx_mode == 0 && g_mv_sp > 0)
+            memcpy(g_m_mv, g_stk_mv[--g_mv_sp], sizeof(g_m_mv));
+        else if (g_mtx_mode == 1 && g_pj_sp > 0)
+            memcpy(g_m_pj, g_stk_pj[--g_pj_sp], sizeof(g_m_pj));
+        break;
+
+    case GLFN_Enable:
+    case GLFN_Disable: {
+        bool on = (fn == GLFN_Enable);
+        if (a0 == 0x0DE1u) g_en_tex2d = on;       /* GL_TEXTURE_2D */
+        else if (a0 == 0x0BE2u) g_en_blend = on;  /* GL_BLEND */
+        else if (a0 == 0x0BC0u) g_en_alpha = on;  /* GL_ALPHA_TEST */
+        break;
+    }
+
+    case GLFN_EnableClientState:
+    case GLFN_DisableClientState: {
+        bool on = (fn == GLFN_EnableClientState);
+        if (a0 == 0x8074u) g_va_pos.on = on;      /* GL_VERTEX_ARRAY */
+        else if (a0 == 0x8078u) g_va_tex.on = on; /* GL_TEXTURE_COORD_ARRAY */
+        else if (a0 == 0x8076u) g_va_col.on = on; /* GL_COLOR_ARRAY */
+        break;
+    }
+
+    case GLFN_VertexPointer:
+        g_va_pos.size = (int)a0;
+        g_va_pos.type = a1;
+        g_va_pos.stride = (int)a2;
+        g_va_pos.addr = a3;
+        {
+            static uint32_t vp_logs = 0;
+            if (vp_logs < 6) {
+                LOGD("glVertexPointer(size=%u type=0x%X stride=%u ptr=0x%08X) "
+                     "dados={%08X %08X %08X %08X %08X %08X %08X %08X}",
+                     a0, a1, a2, a3,
+                     zmem_read32(a3), zmem_read32(a3 + 4), zmem_read32(a3 + 8),
+                     zmem_read32(a3 + 12), zmem_read32(a3 + 16),
+                     zmem_read32(a3 + 20), zmem_read32(a3 + 24),
+                     zmem_read32(a3 + 28));
+                vp_logs++;
+            }
+        }
+        break;
+
+    case GLFN_TexCoordPointer:
+        g_va_tex.size = (int)a0;
+        g_va_tex.type = a1;
+        g_va_tex.stride = (int)a2;
+        g_va_tex.addr = a3;
+        {
+            static uint32_t tp_logs = 0;
+            if (tp_logs < 6) {
+                LOGD("glTexCoordPointer(size=%u type=0x%X stride=%u ptr=0x%08X) "
+                     "dados={%08X %08X %08X %08X}",
+                     a0, a1, a2, a3, zmem_read32(a3), zmem_read32(a3 + 4),
+                     zmem_read32(a3 + 8), zmem_read32(a3 + 12));
+                tp_logs++;
+            }
+        }
+        break;
+
+    case GLFN_ColorPointer:
+        g_va_col.size = (int)a0;
+        g_va_col.type = a1;
+        g_va_col.stride = (int)a2;
+        g_va_col.addr = a3;
+        break;
+
+    case GLFN_Color4x:
+        g_cur_color[0] = fx_to_f(a0);
+        g_cur_color[1] = fx_to_f(a1);
+        g_cur_color[2] = fx_to_f(a2);
+        g_cur_color[3] = fx_to_f(a3);
+        break;
+
+    case GLFN_BindTexture:
+        g_bound_tex = (a1 < ZGL_MAX_TEXTURES) ? a1 : 0;
+        break;
+
+    case GLFN_DeleteTextures: {
+        uint32_t n = a0, i;
+        if (n > 256u)
+            break;
+        for (i = 0; i < n; i++) {
+            uint32_t id = zmem_read32(a1 + i * 4);
+            if (id < ZGL_MAX_TEXTURES && g_textures[id].pix) {
+                free(g_textures[id].pix);
+                g_textures[id].pix = NULL;
+            }
+        }
+        break;
+    }
+
+    case GLFN_TexImage2D: {
+        /* (target, level, ifmt, w | stack: h, border, fmt, type, pixels) */
+        int w = (int)a3;
+        int h = (int)zbrew_stack_arg(0);
+        uint32_t fmt = zbrew_stack_arg(2);
+        uint32_t type = zbrew_stack_arg(3);
+        uint32_t pixels = zbrew_stack_arg(4);
+        uint32_t level = a1;
+        if (level != 0 || g_bound_tex == 0 || g_bound_tex >= ZGL_MAX_TEXTURES)
+            break;
+        if (!pixels || w <= 0 || h <= 0)
+            break;
+        free(g_textures[g_bound_tex].pix);
+        g_textures[g_bound_tex].pix = convert_teximage(pixels, w, h, fmt, type);
+        g_textures[g_bound_tex].w = w;
+        g_textures[g_bound_tex].h = h;
+        break;
+    }
+
+    case GLFN_TexSubImage2D: {
+        /* (target, level, xoff, yoff | stack: w, h, fmt, type, pixels) */
+        int xo = (int)a2, yo = (int)a3;
+        int w = (int)zbrew_stack_arg(0);
+        int h = (int)zbrew_stack_arg(1);
+        uint32_t fmt = zbrew_stack_arg(2);
+        uint32_t type = zbrew_stack_arg(3);
+        uint32_t pixels = zbrew_stack_arg(4);
+        zgl_texture_t *t;
+        uint32_t *tmp;
+        int row;
+        if (a1 != 0 || g_bound_tex == 0 || g_bound_tex >= ZGL_MAX_TEXTURES)
+            break;
+        t = &g_textures[g_bound_tex];
+        if (!t->pix || !pixels || w <= 0 || h <= 0 ||
+            xo < 0 || yo < 0 || xo + w > t->w || yo + h > t->h)
+            break;
+        tmp = convert_teximage(pixels, w, h, fmt, type);
+        if (!tmp)
+            break;
+        for (row = 0; row < h; row++)
+            memcpy(t->pix + (yo + row) * t->w + xo, tmp + row * w,
+                   (size_t)w * 4);
+        free(tmp);
+        break;
+    }
+
+    case GLFN_DrawArrays: {
+        /* (mode, first, count): 'first' desloca o array via addr temporario */
+        uint32_t mode = a0;
+        int firstv = (int)a1, count = (int)a2;
+        zgl_varray_t save = g_va_pos;
+        zgl_varray_t save_t = g_va_tex, save_c = g_va_col;
+        if (count <= 0 || count > 65536)
+            break;
+        if (firstv > 0) {
+            int esz, stride;
+            esz = (g_va_pos.type == 0x1402u) ? 2 :
+                  (g_va_pos.type == 0x1400u || g_va_pos.type == 0x1401u) ? 1 : 4;
+            stride = g_va_pos.stride ? g_va_pos.stride : g_va_pos.size * esz;
+            g_va_pos.addr += (uint32_t)(firstv * stride);
+            if (g_va_tex.on) {
+                esz = (g_va_tex.type == 0x1402u) ? 2 :
+                      (g_va_tex.type == 0x1400u || g_va_tex.type == 0x1401u) ? 1 : 4;
+                stride = g_va_tex.stride ? g_va_tex.stride : g_va_tex.size * esz;
+                g_va_tex.addr += (uint32_t)(firstv * stride);
+            }
+            if (g_va_col.on) {
+                esz = (g_va_col.type == 0x1402u) ? 2 :
+                      (g_va_col.type == 0x1400u || g_va_col.type == 0x1401u) ? 1 : 4;
+                stride = g_va_col.stride ? g_va_col.stride : g_va_col.size * esz;
+                g_va_col.addr += (uint32_t)(firstv * stride);
+            }
+        }
+        draw_prim(mode, count, NULL, 0, 0);
+        g_va_pos = save;
+        g_va_tex = save_t;
+        g_va_col = save_c;
+        break;
+    }
+
+    case GLFN_DrawElements: {
+        /* (mode, count, type, indices) */
+        int count = (int)a1;
+        if (count <= 0 || count > 65536)
+            break;
+        draw_prim(a0, count, elem_index, a3, a2);
+        break;
+    }
 
     case GLFN_ClearColorx: {
         /* GLclampx fixed-point 16.16: 0..0x10000 = 0.0..1.0 */
@@ -497,9 +1197,14 @@ void zgl_handle(uint32_t slot)
         break;
     default:
         if (slot >= 3 && slot < 3 + ZGL_FN_COUNT) {
-            /* Vtable COM: this em R0, args GL em R1..R3 + stack */
-            zgl_dispatch(slot - 3, g_cpu.r[1], g_cpu.r[2], g_cpu.r[3],
-                         zbrew_stack_arg(0));
+            /* CONVENCAO QUALCOMM (confirmada no BrewQXGLDispatch do zeemu):
+             * as funcoes gl* da vtable IGL NAO recebem this - os argumentos
+             * GL comecam direto em R0, igual a tabela direta. So AddRef/
+             * Release/QueryInterface (slots 0-2) seguem COM classico. Ler
+             * this em R0 deslocava tudo (GetIntegerv com pname=ponteiro,
+             * GenTextures com n=269 milhoes - visto na pratica). */
+            zgl_dispatch(slot - 3, g_cpu.r[0], g_cpu.r[1], g_cpu.r[2],
+                         g_cpu.r[3]);
             break;
         }
         if (warn_count < 16) {

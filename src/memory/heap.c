@@ -71,6 +71,11 @@ uint32_t zheap_alloc(uint32_t size) {
                 set_hdr(blk, ZHEAP_MAGIC_USED, bsize, hdr_prev(blk));
             }
             g_used_bytes += hdr_size(blk);
+            if (blk + ZHEAP_HDR_SIZE < 0x100AF500u &&
+                blk + ZHEAP_HDR_SIZE + size > 0x100AF4C0u) {
+                LOGI("watch heap alloc: user=0x%08X size=%u blk=0x%08X",
+                     blk + ZHEAP_HDR_SIZE, size, blk);
+            }
             return blk + ZHEAP_HDR_SIZE;
         }
         blk = next_block(blk);
@@ -88,6 +93,8 @@ void zheap_free(uint32_t addr) {
         return;
     }
     uint32_t size = hdr_size(blk);
+    if (addr < 0x100AF500u && addr + size > 0x100AF4C0u)
+        LOGI("watch heap free: user=0x%08X size=%u", addr, size);
     if (size <= g_used_bytes) g_used_bytes -= size; else g_used_bytes = 0;
     set_hdr(blk, ZHEAP_MAGIC_FREE, size, hdr_prev(blk));
 
