@@ -371,6 +371,12 @@ FodyWeavers.xsd
 reference/infuse_zeebo_emulator/
 reference/infuse_zeebo_emulator_tuxality_a1_windows_x86_64/
 
+# Large local-only reference material (never commit - study/reference copies,
+# not project source; see docs/THIRD_PARTY.md for what each one is)
+reference/zeemu-main/
+reference/openzeebo-master/
+reference/zeebo_doom-main/
+
 # Build artifacts generated locally
 build/
 build-smoke/
