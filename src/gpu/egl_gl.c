@@ -665,7 +665,6 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
                 sb = (sb * sa + (dst & 0xFF) * (255 - sa)) / 255;
             }
             fb[y * ZFB_WIDTH + x] = 0xFF000000u | (sr << 16) | (sg << 8) | sb;
-                static uint32_t pix_writes = 0; if (pix_writes < 10) { LOGD("pixel write: (%d,%d) = 0x%08X", x, y, 0xFF000000u | (sr << 16) | (sg << 8) | sb); pix_writes++; }
         }
     }
 }
@@ -946,9 +945,17 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
     case GLFN_EnableClientState:
     case GLFN_DisableClientState: {
         bool on = (fn == GLFN_EnableClientState);
-        if (a0 == 0x8074u) g_va_pos.on = on;      /* GL_VERTEX_ARRAY */
-        else if (a0 == 0x8078u) g_va_tex.on = on; /* GL_TEXTURE_COORD_ARRAY */
-        else if (a0 == 0x8076u) g_va_col.on = on; /* GL_COLOR_ARRAY */
+        static uint32_t ce_logs = 0;
+        if (ce_logs < 50) {
+            if (a0 == 0x8074u) { LOGI("[%u] va_pos: %s", ce_logs, on?"ENABLED":"disabled"); }
+            else if (a0 == 0x8078u) { LOGI("[%u] va_tex: %s", ce_logs, on?"ENABLED":"disabled"); }
+            else if (a0 == 0x8076u) { LOGI("[%u] va_col: %s", ce_logs, on?"ENABLED":"disabled"); }
+            else { LOGI("[%u] EnableClientState 0x%X = %s", ce_logs, a0, on?"on":"off"); }
+            ce_logs++;
+        }
+        if (a0 == 0x8074u) g_va_pos.on = on;
+        else if (a0 == 0x8078u) g_va_tex.on = on;
+        else if (a0 == 0x8076u) g_va_col.on = on;
         break;
     }
 
@@ -959,6 +966,12 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         /* Convencao Qualcomm: pointer pode estar em R3 ou stack[0]. Se R3==SP, real ptr=sp[0] */
         uint32_t ptr = a3;
         if (a3 >= 0x2FC00000u && a3 < 0x30000000u) { ptr = zbrew_stack_arg(0); }
+        static uint32_t vp_cnt = 0;
+        if (vp_cnt < 10) {
+            LOGI("VP[%u] a0=0x%X a1=0x%X a2=0x%X a3=0x%X sp0=0x%X", vp_cnt,
+                 a0, a1, a2, a3, zbrew_stack_arg(0));
+            vp_cnt++;
+        }
         g_va_pos.addr = ptr;
         {
             bool valid = (a3 < 0x04000000u);
@@ -1107,6 +1120,13 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
                 stride = g_va_col.stride ? g_va_col.stride : g_va_col.size * esz;
                 g_va_col.addr += (uint32_t)(firstv * stride);
             }
+        }
+        {
+            static uint32_t da_calls = 0;
+            if (da_calls < 20)
+                LOGI("DrawArrays[%u]: mode=0x%X count=%d va_pos.on=%d va_pos.addr=0x%08X",
+                     da_calls, mode, count, g_va_pos.on, g_va_pos.addr);
+            da_calls++;
         }
         draw_prim(mode, count, NULL, 0, 0);
         g_va_pos = save;

@@ -75,7 +75,8 @@ jogabilidade na tela. É deliberadamente descrito assim para não gerar expectat
 - Avança pela máquina de estados real de boot do BREW: `AEEMod_Load → IModule_CreateInstance →
   EVT_APP_START → rodando`.
 - Uma ROM comercial (**Zeebo Family Pack**) chega ao estado **"rodando"** sem travar, com
-  display, arquivos, som e joystick (via HID) inicializados de verdade.
+  display, arquivos, som e joystick (via HID) inicializados de verdade, e já produz frames
+  de vídeo pelo caminho EGL/GL HLE.
 - Um ROM sintético, feito à mão (`tests/roms/make_test_rom.py`), já desenhou uma tela azul com um
   retângulo vermelho através do pipeline completo (loader → CPU → trap HLE → framebuffer →
   vídeo) — prova de que a "encanação" funciona, mas não é um jogo.
@@ -84,16 +85,15 @@ jogabilidade na tela. É deliberadamente descrito assim para não gerar expectat
 
 | ROM | CLSID | Progresso atual |
 |---|---|---|
-| **Zeebo Family Pack** | `0x010903C6` | Mais avançado: passa por `AEEMod_Load`, `IModule_CreateInstance`, inicialização de display/arquivos/som/joystick, trata `EVT_APP_START` e chega a "rodando" **sem descarrilar**. Bloqueado porque o jogo cria `AEECLSID_EGL`/`AEECLSID_GL` (3D), que hoje são só objetos stub — então não produz frames desenhados. |
+| **Zeebo Family Pack** | `0x010903C6` | Mais avançado: passa por `AEEMod_Load`, `IModule_CreateInstance`, inicialização de display/arquivos/som/joystick, trata `EVT_APP_START` e chega a "rodando" **sem descarrilar**. A pilha EGL/GL já produz frames e apresenta o framebuffer; ainda falta cobertura maior de GLES 1.x para o menu completo e sprites mais ricos. |
 | **Pac-Mania** | `0x01087B72` | `AEEMod_Load` OK, entra em `IModule_CreateInstance`, stub BREW `0x0100101C` é criado — mas a CPU descarrila durante a saída do `CreateInstance` (o SP do guest sai da região real de stack e passa a apontar para dentro da VRAM; diagnóstico detalhado em `docs/PROGRESS.md`). |
 | **Double Dragon** | não fixado | `.mod` é uma variante "raw" sem o magic `BREW` esperado pelo parser atual — boot ainda não validado ponta a ponta. |
 | **Zeeboids** | não fixado | Ainda não validado ponta a ponta. |
 
 ### Por que nada é "jogável" ainda
 
-- O bloqueio do **Family Pack** é a ausência de uma pilha 3D real: `AEECLSID_EGL`/`AEECLSID_GL`
-  hoje só existem como stubs COM inertes (respondem `AddRef`/`Release`/`QueryInterface` e nada
-  além disso). Portar/implementar EGL + OpenGL ES é o próximo grande passo para esse título.
+- O **Family Pack** já passa pela pilha EGL/GL mínima e apresenta frames, mas ainda depende de
+  cobertura mais ampla de GLES 1.x para o menu completo e os sprites mais ricos.
 - O bloqueio do **Pac-Mania** é um bug de corrupção de stack ainda não resolvido, com diagnóstico
   já reduzido a um caso específico (`case 5` de `zbrew_handle_stub()` em `src/brew/boot.c`).
 - Não há save states, nem exposição de memória para RetroAchievements/cheats — ambos
