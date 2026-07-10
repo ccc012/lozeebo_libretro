@@ -64,7 +64,8 @@
 - `IFileMgr` real conectado ao boot; o jogo ja tenta abrir `udata\highscore.dat`.
 - `IDisplay_GetDeviceBitmap` devolve um bitmap RGB565 de 640x480 associado a VRAM.
 - `CreateInstance` termina com applet valido; `EVT_APP_START=0` e tratado e o estado chega a "rodando" sem descarrilar.
-- Bloqueio: o Family Pack cria `AEECLSID_EGL` e `AEECLSID_GL`, ainda stubs - o applet roda sem produzir frames. Proxima etapa: portar a pilha EGL/OpenGL ES GPLv3 do Zeemu e conecta-la ao framebuffer libretro.
+- `AEECLSID_EGL` e `AEECLSID_GL` ja estao em HLE funcional suficiente para bootstrap, consulta de config e desenho minimo 2D/3D; o applet agora produz frames e apresenta o framebuffer via `eglSwapBuffers`.
+- Bloqueio atual: o jogo ainda depende de cobertura mais ampla da pilha GLES 1.x para menus e sprites completos, mas o caminho de imagem ja esta vivo.
 
 ## Sessao 2026-07-08 (2): Family Pack chega ao loop de render (tela branca via glClear real)
 
