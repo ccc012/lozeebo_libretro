@@ -805,14 +805,17 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 0;
         break;
     case 5:
-        /* A classe 0x0100101C usada no bootstrap do Pac-Mania consulta
-         * dois resultados opcionais via R2/R3 (ponteiros de saida). Toda
-         * memoria emulada e zerada na alocacao (zmem_init/zheap_reset),
-         * entao explicitamos isso escrevendo NULL, para o modulo tratar
-         * ambos como "nao fornecido" em vez de ler lixo. */
+        /* A classe 0x0100101C usada no bootstrap do Pac-Mania cria
+         * dois sub-objetos de stub reais (como SignalCBFactory em case 3).
+         * Diferente de simplesmente escrever NULL, aloca objetos stub
+         * para evitar que o modulo fique preso em fallback nunca testados. */
         if (clsid == 0x0100101Cu) {
-            if (g_cpu.r[2]) zmem_write32(g_cpu.r[2], 0);
-            if (g_cpu.r[3]) zmem_write32(g_cpu.r[3], 0);
+            uint32_t obj1 = make_stub_interface(0x0100101Cu);
+            uint32_t obj2 = make_stub_interface(0x0100101Cu);
+            if (g_cpu.r[2]) zmem_write32(g_cpu.r[2], obj1);
+            if (g_cpu.r[3]) zmem_write32(g_cpu.r[3], obj2);
+            LOGI("CreateInstance case 5 (0x0100101C) -> obj1=0x%08X obj2=0x%08X",
+                 obj1, obj2);
         }
         g_cpu.r[0] = 0;
         break;
