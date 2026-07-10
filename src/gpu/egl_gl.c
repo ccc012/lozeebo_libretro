@@ -952,7 +952,7 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         break;
     }
 
-    case GLFN_VertexPointer:
+    case GLFN_VertexPointer: {
         g_va_pos.size = (int)a0;
         g_va_pos.type = a1;
         g_va_pos.stride = (int)a2;
@@ -979,8 +979,9 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
             }
         }
         break;
+    }
 
-    case GLFN_TexCoordPointer:
+    case GLFN_TexCoordPointer: {
         g_va_tex.size = (int)a0;
         g_va_tex.type = a1;
         g_va_tex.stride = (int)a2;
@@ -998,6 +999,7 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
             }
         }
         break;
+    }
 
     case GLFN_ColorPointer:
         g_va_col.size = (int)a0;
@@ -1106,7 +1108,7 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
                 g_va_col.addr += (uint32_t)(firstv * stride);
             }
         }
-        draw_test_quad(); // TEMP: hardcoded test
+        draw_prim(mode, count, NULL, 0, 0);
         g_va_pos = save;
         g_va_tex = save_t;
         g_va_col = save_c;
