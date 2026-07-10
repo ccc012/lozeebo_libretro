@@ -610,6 +610,17 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
     if (maxx > ZFB_WIDTH) maxx = ZFB_WIDTH;
     if (maxy > ZFB_HEIGHT) maxy = ZFB_HEIGHT;
 
+    {
+        static uint32_t bbox_logs = 0;
+        if (bbox_logs < 4) {
+            LOGD("raster bbox: (%.1f,%.1f)-(%.1f,%.1f) -> pix [%d,%d)-[%d,%d) "
+                 "pixels=%u", v0->sx, v0->sy, v2->sx, v2->sy, minx, miny, maxx, maxy,
+                 (uint32_t)((maxx - minx) * (maxy - miny)));
+            bbox_logs++;
+        }
+    }
+
+    if (!fb) { LOGD("raster: fb == NULL!"); return; }
     for (y = miny; y < maxy; y++) {
         for (x = minx; x < maxx; x++) {
             float px = (float)x + 0.5f, py = (float)y + 0.5f;
@@ -654,8 +665,26 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
                 sb = (sb * sa + (dst & 0xFF) * (255 - sa)) / 255;
             }
             fb[y * ZFB_WIDTH + x] = 0xFF000000u | (sr << 16) | (sg << 8) | sb;
+                static uint32_t pix_writes = 0; if (pix_writes < 10) { LOGD("pixel write: (%d,%d) = 0x%08X", x, y, 0xFF000000u | (sr << 16) | (sg << 8) | sb); pix_writes++; }
         }
     }
+}
+
+/* Teste: quad colorido no canto (ignora dados do jogo, prove rasterizador) */
+static void draw_test_quad(void)
+{
+    static uint32_t called = 0;
+    if (called == 0) {
+        LOGI("draw_test_quad CHAMADO - rasterizando");
+        called = 1;
+    }
+    zgl_vtx_t v[4];
+    v[0].sx = 20.f;  v[0].sy = 20.f;  v[0].cr = 1.f; v[0].cg = 0.f; v[0].cb = 0.f; v[0].ca = 1.f;
+    v[1].sx = 120.f; v[1].sy = 20.f;  v[1].cr = 0.f; v[1].cg = 1.f; v[1].cb = 0.f; v[1].ca = 1.f;
+    v[2].sx = 120.f; v[2].sy = 120.f; v[2].cr = 0.f; v[2].cg = 0.f; v[2].cb = 1.f; v[2].ca = 1.f;
+    v[3].sx = 20.f;  v[3].sy = 120.f; v[3].cr = 1.f; v[3].cg = 1.f; v[3].cb = 0.f; v[3].ca = 1.f;
+    raster_triangle(&v[0], &v[1], &v[2]);
+    raster_triangle(&v[0], &v[2], &v[3]);
 }
 
 static void draw_prim(uint32_t mode, int count,
@@ -1065,7 +1094,7 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
                 g_va_col.addr += (uint32_t)(firstv * stride);
             }
         }
-        draw_prim(mode, count, NULL, 0, 0);
+        draw_test_quad(); // draw_prim(mode, count, NULL, 0, 0);
         g_va_pos = save;
         g_va_tex = save_t;
         g_va_col = save_c;
