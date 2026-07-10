@@ -956,9 +956,17 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         g_va_pos.size = (int)a0;
         g_va_pos.type = a1;
         g_va_pos.stride = (int)a2;
-        g_va_pos.addr = a3;
+        /* Convencao Qualcomm: pointer pode estar em R3 ou stack[0]. Se R3==SP, real ptr=sp[0] */
+        uint32_t ptr = a3;
+        if (a3 >= 0x2FC00000u && a3 < 0x30000000u) { ptr = zbrew_stack_arg(0); }
+        g_va_pos.addr = ptr;
         {
+            bool valid = (a3 < 0x04000000u);
             static uint32_t vp_logs = 0;
+            if (!valid) {
+                LOGD("VP INVALID ptr=0x%08X r0=0x%08X r1=0x%08X r2=0x%08X r3=0x%08X sp0=0x%08X",
+                     a3, g_cpu.r[0], g_cpu.r[1], g_cpu.r[2], g_cpu.r[3], zbrew_stack_arg(0));
+            }
             if (vp_logs < 6) {
                 LOGD("glVertexPointer(size=%u type=0x%X stride=%u ptr=0x%08X) "
                      "dados={%08X %08X %08X %08X %08X %08X %08X %08X}",
@@ -976,7 +984,9 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         g_va_tex.size = (int)a0;
         g_va_tex.type = a1;
         g_va_tex.stride = (int)a2;
-        g_va_tex.addr = a3;
+        uint32_t ptr = a3;
+        if (a3 >= 0x2FC00000u && a3 < 0x30000000u) { ptr = zbrew_stack_arg(0); }
+        g_va_tex.addr = ptr;
         {
             static uint32_t tp_logs = 0;
             if (tp_logs < 6) {
@@ -993,7 +1003,9 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         g_va_col.size = (int)a0;
         g_va_col.type = a1;
         g_va_col.stride = (int)a2;
-        g_va_col.addr = a3;
+        uint32_t ptr = a3;
+        if (a3 >= 0x2FC00000u && a3 < 0x30000000u) { ptr = zbrew_stack_arg(0); }
+        g_va_col.addr = ptr;
         break;
 
     case GLFN_Color4x:
@@ -1094,7 +1106,7 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
                 g_va_col.addr += (uint32_t)(firstv * stride);
             }
         }
-        draw_test_quad(); // draw_prim(mode, count, NULL, 0, 0);
+        draw_test_quad(); // TEMP: hardcoded test
         g_va_pos = save;
         g_va_tex = save_t;
         g_va_col = save_c;
