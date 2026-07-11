@@ -916,6 +916,8 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         m[13] = -(t + b) / (t - b);
         m[14] = -(f + n) / (f - n);
         mtx_mul(cur_mtx(), cur_mtx(), m);
+        LOGI("glOrthox(l=%.2f r=%.2f b=%.2f t=%.2f n=%.2f f=%.2f) modo=%d",
+             l, r, b, t, n, f, g_mtx_mode);
         break;
     }
 
@@ -1315,6 +1317,8 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         g_gl_viewport_y = (int32_t)a1;
         g_gl_viewport_w = (int32_t)a2;
         g_gl_viewport_h = (int32_t)a3;
+        LOGI("glViewport(x=%d y=%d w=%d h=%d)", g_gl_viewport_x,
+             g_gl_viewport_y, g_gl_viewport_w, g_gl_viewport_h);
         break;
 
     case GLFN_Scissor:
