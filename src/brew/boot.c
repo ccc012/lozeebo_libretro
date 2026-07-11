@@ -427,6 +427,33 @@ void zboot_on_guest_return(void) {
     }
 }
 
+void zboot_process_timers(void) {
+    int i;
+    uint32_t now = zbrew_uptime_ms();
+    bool has_active = false;
+
+    if (g_state != BOOT_RUNNING)
+        return;
+
+    for (i = 0; i < ZTIMER_MAX; i++) {
+        if (!g_timers[i].active)
+            continue;
+
+        has_active = true;
+        if (now >= g_timers[i].expires_ms) {
+            LOGI("boot: timer %d expirou, callback=0x%08X user=0x%08X",
+                 i, g_timers[i].pfn, g_timers[i].puser);
+            g_state = BOOT_TIMER_CALL;
+            g_timers[i].active = false;
+            guest_call(g_timers[i].pfn, g_timers[i].puser, 0, 0, 0);
+            return;
+        }
+    }
+
+    if (!has_active)
+        g_cpu.halted = false;
+}
+
 void zboot_tick(uint32_t elapsed_ms) {
     int i;
     (void)elapsed_ms;
