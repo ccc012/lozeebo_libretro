@@ -346,6 +346,9 @@ static int g_mv_sp = 0, g_pj_sp = 0;
 static int g_mtx_mode = 0;                 /* 0=modelview 1=projection 2=texture */
 static float g_cur_color[4] = {1.f, 1.f, 1.f, 1.f};
 static bool g_en_tex2d = false, g_en_blend = false, g_en_alpha = false;
+static bool g_en_cull = false, g_en_depth = false, g_en_scissor = false;
+static uint32_t g_gl_scissor_x = 0, g_gl_scissor_y = 0;
+static uint32_t g_gl_scissor_w = ZFB_WIDTH, g_gl_scissor_h = ZFB_HEIGHT;
 
 static float *cur_mtx(void)
 {
@@ -403,6 +406,10 @@ static void zgl_reset_raster(void)
     g_mtx_mode = 0;
     g_cur_color[0] = g_cur_color[1] = g_cur_color[2] = g_cur_color[3] = 1.f;
     g_en_tex2d = g_en_blend = g_en_alpha = false;
+    g_en_cull = g_en_depth = g_en_scissor = false;
+    g_gl_scissor_x = g_gl_scissor_y = 0;
+    g_gl_scissor_w = ZFB_WIDTH;
+    g_gl_scissor_h = ZFB_HEIGHT;
 }
 
 /* Converte um upload de textura guest para ARGB8888 host.
@@ -622,7 +629,13 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
 
     if (!fb) { LOGD("raster: fb == NULL!"); return; }
     for (y = miny; y < maxy; y++) {
+        if (g_en_scissor && (y < (int)g_gl_scissor_y ||
+            y >= (int)(g_gl_scissor_y + g_gl_scissor_h)))
+            continue;
         for (x = minx; x < maxx; x++) {
+            if (g_en_scissor && (x < (int)g_gl_scissor_x ||
+                x >= (int)(g_gl_scissor_x + g_gl_scissor_w)))
+                continue;
             float px = (float)x + 0.5f, py = (float)y + 0.5f;
             float w0 = ((v1->sx - px) * (v2->sy - py) -
                         (v1->sy - py) * (v2->sx - px)) * inv_area;
@@ -939,6 +952,9 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         if (a0 == 0x0DE1u) g_en_tex2d = on;       /* GL_TEXTURE_2D */
         else if (a0 == 0x0BE2u) g_en_blend = on;  /* GL_BLEND */
         else if (a0 == 0x0BC0u) g_en_alpha = on;  /* GL_ALPHA_TEST */
+        else if (a0 == 0x0B44u) g_en_cull = on;   /* GL_CULL_FACE */
+        else if (a0 == 0x0B71u) g_en_depth = on;  /* GL_DEPTH_TEST */
+        else if (a0 == 0x0C11u) g_en_scissor = on;/* GL_SCISSOR_TEST */
         break;
     }
 
@@ -1066,6 +1082,44 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         g_textures[g_bound_tex].h = h;
         break;
     }
+
+    case GLFN_TexParameterx:
+        /* Ativa o comportamento mais comum para assets 2D: manter
+         * textura repetida/filtrada de forma previsivel.
+         * Os jogos costumam configurar CLAMP/LINEAR, mas o rasterizador
+         * aqui amostra sempre por nearest e wrap repetido. */
+        break;
+
+    case GLFN_TexEnvx:
+    case GLFN_TexEnvxv:
+    case GLFN_PixelStorei:
+    case GLFN_Hint:
+    case GLFN_ShadeModel:
+    case GLFN_LogicOp:
+    case GLFN_CullFace:
+    case GLFN_DepthFunc:
+    case GLFN_DepthMask:
+    case GLFN_DepthRangex:
+    case GLFN_ClearDepthx:
+    case GLFN_ClearStencil:
+    case GLFN_StencilFunc:
+    case GLFN_StencilMask:
+    case GLFN_StencilOp:
+    case GLFN_Fogx:
+    case GLFN_Fogxv:
+    case GLFN_LightModelx:
+    case GLFN_LightModelxv:
+    case GLFN_Lightx:
+    case GLFN_Lightxv:
+    case GLFN_Materialx:
+    case GLFN_Materialxv:
+    case GLFN_LineWidthx:
+    case GLFN_PointSizex:
+    case GLFN_PolygonOffsetx:
+    case GLFN_SampleCoveragex:
+    case GLFN_FrontFace:
+        /* Estado aceito mas ainda sem efeito na rasterizacao simples. */
+        break;
 
     case GLFN_TexSubImage2D: {
         /* (target, level, xoff, yoff | stack: w, h, fmt, type, pixels) */
@@ -1215,12 +1269,55 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
     }
 
     case GLFN_Viewport:
-    case GLFN_Scissor:
         g_gl_viewport_x = (int32_t)a0;
         g_gl_viewport_y = (int32_t)a1;
         g_gl_viewport_w = (int32_t)a2;
         g_gl_viewport_h = (int32_t)a3;
         break;
+
+    case GLFN_Scissor:
+        g_gl_scissor_x = a0;
+        g_gl_scissor_y = a1;
+        g_gl_scissor_w = a2;
+        g_gl_scissor_h = a3;
+        break;
+
+    case GLFN_ReadPixels: {
+        uint32_t dst = zbrew_stack_arg(0);
+        uint32_t format = zbrew_stack_arg(1);
+        uint32_t type = zbrew_stack_arg(2);
+        int x = (int)a0, y = (int)a1;
+        int w = (int)a2, h = (int)a3;
+        int row;
+        if (!dst || w <= 0 || h <= 0)
+            break;
+        for (row = 0; row < h; row++) {
+            int yy = y + row;
+            int col;
+            if (yy < 0 || yy >= ZFB_HEIGHT)
+                continue;
+            for (col = 0; col < w; col++) {
+                int xx = x + col;
+                uint32_t px = 0xFF000000u;
+                if (xx >= 0 && xx < ZFB_WIDTH)
+                    px = zfb_pixels()[yy * ZFB_WIDTH + xx];
+                if (type == 0x1401u) {
+                    /* RGBA/UNSIGNED_BYTE */
+                    zmem_write8(dst + (uint32_t)(row * w + col) * 4 + 0, (uint8_t)(px >> 16));
+                    zmem_write8(dst + (uint32_t)(row * w + col) * 4 + 1, (uint8_t)(px >> 8));
+                    zmem_write8(dst + (uint32_t)(row * w + col) * 4 + 2, (uint8_t)(px));
+                    zmem_write8(dst + (uint32_t)(row * w + col) * 4 + 3, (uint8_t)(px >> 24));
+                } else if (type == 0x8363u) {
+                    uint16_t r = (uint16_t)((px >> 19) & 0x1F);
+                    uint16_t g = (uint16_t)((px >> 10) & 0x3F);
+                    uint16_t b = (uint16_t)((px >> 3) & 0x1F);
+                    zmem_write16(dst + (uint32_t)(row * w + col) * 2, (uint16_t)((r << 11) | (g << 5) | b));
+                }
+            }
+        }
+        (void)format;
+        break;
+    }
 
     default:
         /* Estado/matrizes/draw: no-op ate o rasterizador existir.

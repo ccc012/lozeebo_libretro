@@ -345,14 +345,6 @@ void zbrew_handle_helper(uint32_t id) {
     case 0x030: /* wstrlen */
         g_cpu.r[0] = ewstrlen(r0);
         break;
-    case 0x040: /* strtowstr(src, dst, size_bytes) -> dst */
-        guest_strtowstr(r1, r0, r2 / 2);
-        g_cpu.r[0] = r1;
-        break;
-    case 0x044: /* wstrtostr(src, dst, size_bytes) -> dst */
-        guest_wstrtostr(r1, r0, r2);
-        g_cpu.r[0] = r1;
-        break;
     case 0x034: { /* wstrchr */
         uint32_t i = 0; uint16_t c;
         uint16_t needle = (uint16_t)r1;
