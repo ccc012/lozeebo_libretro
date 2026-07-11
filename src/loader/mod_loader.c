@@ -36,6 +36,10 @@ static uint32_t branch_target(uint32_t insn, uint32_t pc) {
     return pc + 8 + (uint32_t)imm;
 }
 
+static bool is_arm_branch(uint32_t insn) {
+    return (insn & 0x0F000000u) == 0x0A000000u;
+}
+
 static int ci_is_mod_segment(const char *p) {
     return p[0] && p[1] && p[2] && p[3] &&
            tolower((unsigned char)p[0]) == 'm' &&
@@ -124,6 +128,7 @@ bool zmod_load(const void *data, size_t size, const char *path,
     const uint8_t *bytes = (const uint8_t *)data;
     uint32_t hdr_off = 0;
     bool has_brew_hdr = false;
+    uint32_t hinted_clsid = path ? zmif_find_applet_clsid(path) : 0;
 
     if (!data || size < 8) {
         LOGE("zmod_load: sem dados");
@@ -189,7 +194,17 @@ bool zmod_load(const void *data, size_t size, const char *path,
     } else {
         /* binario cru: entry no offset 0 */
         out->entry = 0;
-        LOGI("mod cru: %u bytes, entry=0x00000000", out->code_size);
+        if (!hinted_clsid && size >= 4) {
+            uint32_t first = rd32(bytes);
+            if (is_arm_branch(first)) {
+                uint32_t target = branch_target(first, 0);
+                if (target < (uint32_t)size) {
+                    LOGI("mod cru: branch inicial detectado -> entry=0x%08X", target);
+                    out->entry = target;
+                }
+            }
+        }
+        LOGI("mod cru: %u bytes, entry=0x%08X", out->code_size, out->entry);
     }
 
     /* Nome e diretorio de assets */

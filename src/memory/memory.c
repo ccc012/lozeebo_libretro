@@ -214,3 +214,14 @@ void *zmem_host_ptr(uint32_t addr, uint32_t len) {
         return p;
     return NULL;
 }
+
+uint8_t *zmem_ram_ptr(void) { return g_ram; }
+uint8_t *zmem_heap_ptr(void) { return g_heap; }
+uint8_t *zmem_stack_ptr(void) { return g_stack; }
+uint8_t *zmem_vram_ptr(void) { return g_vram; }
+const uint8_t *zmem_ram_ptr_const(void) { return g_ram; }
+const uint8_t *zmem_heap_ptr_const(void) { return g_heap; }
+const uint8_t *zmem_stack_ptr_const(void) { return g_stack; }
+const uint8_t *zmem_vram_ptr_const(void) { return g_vram; }
+const uint8_t *zmem_highpage_ptr_const(void) { return g_highpage; }
+uint8_t *zmem_highpage_ptr(void) { return g_highpage; }

@@ -752,6 +752,46 @@ static void draw_prim(uint32_t mode, int count,
     }
 }
 
+static uint32_t decode_vertex_ptr(uint32_t raw_ptr) {
+    uint32_t alt = zbrew_stack_arg(0);
+    if (raw_ptr < 0x1000u) {
+        /* Pointer muitopequeño: pega do stack. Mas valida o resultado. */
+        if (alt >= 0x04000000u) {
+            static uint32_t warn_count = 0;
+            if (warn_count < 3) {
+                LOGW("decode_vertex_ptr: raw=0x%X (small) -> stack[0]=0x%X (INVÁLIDO, fora da RAM)",
+                     raw_ptr, alt);
+                warn_count++;
+            }
+            return 0;  /* fallback: sem dados, triângulo será descartado */
+        }
+        return alt;
+    }
+    if (raw_ptr >= ZMEM_STACK_BASE && raw_ptr < (ZMEM_STACK_BASE + ZMEM_STACK_SIZE)) {
+        /* Pointer está na stack: pega alternative */
+        if (alt >= 0x04000000u) {
+            static uint32_t warn_count = 0;
+            if (warn_count < 3) {
+                LOGW("decode_vertex_ptr: raw=0x%X (stack) -> stack[0]=0x%X (INVÁLIDO, fora da RAM)",
+                     raw_ptr, alt);
+                warn_count++;
+            }
+            return 0;
+        }
+        return alt;
+    }
+    /* Pointer válido (em RAM) */
+    if (raw_ptr >= 0x04000000u) {
+        static uint32_t warn_count = 0;
+        if (warn_count < 3) {
+            LOGW("decode_vertex_ptr: raw=0x%X FORA DA RAM", raw_ptr);
+            warn_count++;
+        }
+        return 0;
+    }
+    return raw_ptr;
+}
+
 static int elem_index(int i, uint32_t addr, uint32_t type)
 {
     if (type == 0x1403u) /* UNSIGNED_SHORT */
@@ -980,12 +1020,14 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         g_va_pos.type = a1;
         g_va_pos.stride = (int)a2;
         /* Convencao Qualcomm: pointer pode estar em R3 ou stack[0]. Se R3==SP, real ptr=sp[0] */
-        uint32_t ptr = a3;
-        if (a3 >= 0x2FC00000u && a3 < 0x30000000u) { ptr = zbrew_stack_arg(0); }
+        uint32_t ptr = decode_vertex_ptr(a3);
         static uint32_t vp_cnt = 0;
         if (vp_cnt < 10) {
-            LOGI("VP[%u] a0=0x%X a1=0x%X a2=0x%X a3=0x%X sp0=0x%X", vp_cnt,
-                 a0, a1, a2, a3, zbrew_stack_arg(0));
+            uint32_t sp0 = zbrew_stack_arg(0);
+            uint32_t decoded = decode_vertex_ptr(a3);
+            LOGI("VP[%u] a3=0x%X -> decoded=0x%X (sp[0]=0x%X) data@decoded={%08X %08X %08X %08X}", vp_cnt,
+                 a3, decoded, sp0,
+                 zmem_read32(decoded), zmem_read32(decoded + 4), zmem_read32(decoded + 8), zmem_read32(decoded + 12));
             vp_cnt++;
         }
         g_va_pos.addr = ptr;
@@ -1014,8 +1056,7 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         g_va_tex.size = (int)a0;
         g_va_tex.type = a1;
         g_va_tex.stride = (int)a2;
-        uint32_t ptr = a3;
-        if (a3 >= 0x2FC00000u && a3 < 0x30000000u) { ptr = zbrew_stack_arg(0); }
+        uint32_t ptr = decode_vertex_ptr(a3);
         g_va_tex.addr = ptr;
         {
             static uint32_t tp_logs = 0;
@@ -1034,8 +1075,7 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         g_va_col.size = (int)a0;
         g_va_col.type = a1;
         g_va_col.stride = (int)a2;
-        uint32_t ptr = a3;
-        if (a3 >= 0x2FC00000u && a3 < 0x30000000u) { ptr = zbrew_stack_arg(0); }
+        uint32_t ptr = decode_vertex_ptr(a3);
         g_va_col.addr = ptr;
         break;
 

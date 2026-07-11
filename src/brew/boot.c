@@ -85,6 +85,88 @@ const char *zboot_state_name(void) {
 
 uint32_t zboot_shell_obj(void) { return g_shell_obj; }
 
+typedef struct {
+    uint32_t magic;
+    uint32_t state;
+    uint32_t ppmod;
+    uint32_t module_obj;
+    uint32_t applet_out;
+    uint32_t applet_obj;
+    uint32_t applet_clsid;
+    uint32_t hid_button_signal;
+    uint32_t hid_position_signal;
+    uint32_t hid_event_id;
+    uint32_t hid_event_uid;
+    uint32_t hid_event_down;
+    uint32_t hid_event_pending;
+    uint32_t shell_obj;
+    uint32_t shell_prefs[8];
+    uint32_t shell_events[8];
+    uint32_t timers[ZTIMER_MAX * 4];
+} zboot_state_blob_t;
+
+size_t zboot_serialize(void *dst, size_t max) {
+    zboot_state_blob_t blob;
+    size_t need = sizeof(blob);
+    size_t i;
+    if (!dst || max < need)
+        return need;
+    memset(&blob, 0, sizeof(blob));
+    blob.magic = 0x5A424F54u; /* 'ZBOT' */
+    blob.state = (uint32_t)g_state;
+    blob.ppmod = g_ppmod;
+    blob.module_obj = g_module_obj;
+    blob.applet_out = g_applet_out;
+    blob.applet_obj = g_applet_obj;
+    blob.applet_clsid = g_applet_clsid;
+    blob.hid_button_signal = g_hid_button_signal;
+    blob.hid_position_signal = g_hid_position_signal;
+    blob.hid_event_id = g_hid_event_id;
+    blob.hid_event_uid = g_hid_event_uid;
+    blob.hid_event_down = g_hid_event_down ? 1u : 0u;
+    blob.hid_event_pending = g_hid_event_pending ? 1u : 0u;
+    blob.shell_obj = g_shell_obj;
+    memcpy(blob.shell_prefs, g_shell_prefs, sizeof(g_shell_prefs));
+    memcpy(blob.shell_events, g_shell_events, sizeof(g_shell_events));
+    for (i = 0; i < ZTIMER_MAX; i++) {
+        blob.timers[i * 4 + 0] = g_timers[i].active ? 1u : 0u;
+        blob.timers[i * 4 + 1] = g_timers[i].expires_ms;
+        blob.timers[i * 4 + 2] = g_timers[i].pfn;
+        blob.timers[i * 4 + 3] = g_timers[i].puser;
+    }
+    memcpy(dst, &blob, sizeof(blob));
+    return need;
+}
+
+bool zboot_unserialize(const void *src, size_t len) {
+    const zboot_state_blob_t *blob = (const zboot_state_blob_t *)src;
+    size_t i;
+    if (!src || len < sizeof(*blob) || blob->magic != 0x5A424F54u)
+        return false;
+    g_state = (enum zboot_state)blob->state;
+    g_ppmod = blob->ppmod;
+    g_module_obj = blob->module_obj;
+    g_applet_out = blob->applet_out;
+    g_applet_obj = blob->applet_obj;
+    g_applet_clsid = blob->applet_clsid;
+    g_hid_button_signal = blob->hid_button_signal;
+    g_hid_position_signal = blob->hid_position_signal;
+    g_hid_event_id = blob->hid_event_id;
+    g_hid_event_uid = blob->hid_event_uid;
+    g_hid_event_down = blob->hid_event_down ? true : false;
+    g_hid_event_pending = blob->hid_event_pending ? true : false;
+    g_shell_obj = blob->shell_obj;
+    memcpy(g_shell_prefs, blob->shell_prefs, sizeof(g_shell_prefs));
+    memcpy(g_shell_events, blob->shell_events, sizeof(g_shell_events));
+    for (i = 0; i < ZTIMER_MAX; i++) {
+        g_timers[i].active = blob->timers[i * 4 + 0] ? true : false;
+        g_timers[i].expires_ms = blob->timers[i * 4 + 1];
+        g_timers[i].pfn = blob->timers[i * 4 + 2];
+        g_timers[i].puser = blob->timers[i * 4 + 3];
+    }
+    return true;
+}
+
 /* ---- IShell real: objeto + vtable na ordem do AEEShell.h ---- */
 static uint32_t setup_real_shell(void) {
     uint32_t vtbl = zheap_alloc(128 * 4);
@@ -812,12 +894,22 @@ void zbrew_handle_stub(uint32_t id) {
         if (clsid == 0x0100101Cu) {
             uint32_t obj1 = make_stub_interface(0x0100101Cu);
             uint32_t obj2 = make_stub_interface(0x0100101Cu);
+            if (!obj1 || !obj2) {
+                LOGE("CreateInstance case 5: heap alloc falhou obj1=0x%08X obj2=0x%08X",
+                     obj1, obj2);
+                g_cpu.r[0] = 1;  /* EFAILED */
+                break;
+            }
             if (g_cpu.r[2]) zmem_write32(g_cpu.r[2], obj1);
             if (g_cpu.r[3]) zmem_write32(g_cpu.r[3], obj2);
-            LOGI("CreateInstance case 5 (0x0100101C) -> obj1=0x%08X obj2=0x%08X",
+            LOGI("CreateInstance case 5 (0x0100101C) OK -> obj1=0x%08X obj2=0x%08X",
                  obj1, obj2);
+            g_cpu.r[0] = 0;
+        } else {
+            LOGW("CreateInstance case 5: CLSID desconhecido 0x%08X (esperado 0x0100101C)",
+                 clsid);
+            g_cpu.r[0] = 0;
         }
-        g_cpu.r[0] = 0;
         break;
     case 7:
         if (clsid == AEECLSID_HID_REAL) {

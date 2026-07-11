@@ -193,5 +193,8 @@ void zbrew_handle_stub(uint32_t id);
 uint32_t zboot_shell_obj(void);
 /* Estado atual do boot em texto (debug/log) */
 const char *zboot_state_name(void);
+/* Serializacao do estado do boot para savestate */
+size_t zboot_serialize(void *dst, size_t max);
+bool   zboot_unserialize(const void *src, size_t len);
 
 #endif /* ZEEBO_BREW_H */
