@@ -430,7 +430,7 @@ C**, não copiado de nenhum dos projetos abaixo. O rastreamento completo, por as
   input). Sua licença não é compatível com cópia de código para este projeto GPL-3.0, então nada
   foi copiado; o pacote local foi removido do repositório depois de extraídos os fatos de
   compatibilidade, e nunca foi publicado no remoto público.
-- **[GGZ BREW Tools](reference/ggzbrewtools-main/)** (estilo zlib, permissiva) — documenta o
+- **GGZ BREW Tools** (estilo zlib, permissiva) — documenta o
   formato de container GGZ (tabela big-endian + membros GZIP concatenados) usado por alguns jogos
   BREW/Zeebo. Compatível para reuso mantendo aviso de licença/copyright.
 - **OpenZeebo** e **zeebo_doom** — mantidos como referências locais (gitignored, não commitadas)
@@ -462,7 +462,6 @@ zeebo_libretro/
 ├── BLOCKERS_ANALYSIS.md     # levantamento tabular de bloqueadores + checklist por jogo
 ├── analyze_clsids.ps1       # script exploratório: varre o romset externo listando CLSIDs por jogo
 ├── quick_build.ps1          # atalho de build rápido (Release x64)
-├── reference/               # cópias locais de projetos de referência (majoritariamente gitignored)
 ├── zeebo_libretro/          # arquivos de projeto do Visual Studio (.vcxproj)
 ├── zeebo_libretro.sln       # solução Visual Studio 2022
 ├── Makefile                 # build Linux/macOS (hoje desatualizado, ver seção Compilando)

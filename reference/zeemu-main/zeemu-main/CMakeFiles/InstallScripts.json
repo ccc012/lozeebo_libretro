@@ -1,8 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"D:/Projectos/zeemu/cmake_install.cmake",
-		"D:/Projectos/zeemu/third_party/SDL3/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
