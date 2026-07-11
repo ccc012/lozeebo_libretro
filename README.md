@@ -77,9 +77,11 @@ jogabilidade na tela. É deliberadamente descrito assim para não gerar expectat
 - Uma ROM comercial (**Zeebo Family Pack**) chega ao estado **"rodando"** sem travar, com
   display, arquivos, som e joystick (via HID) inicializados de verdade, e já produz frames
   de vídeo pelo caminho EGL/GL HLE.
-- Um ROM sintético, feito à mão (`tests/roms/make_test_rom.py`), já desenhou uma tela azul com um
-  retângulo vermelho através do pipeline completo (loader → CPU → trap HLE → framebuffer →
-  vídeo) — prova de que a "encanação" funciona, mas não é um jogo.
+- Historicamente, um ROM sintético feito à mão (`tests/roms/make_test_rom.py`, removido do repo
+  em `1ffb04d` junto com as ROMs comerciais) já desenhou uma tela azul com um retângulo vermelho
+  através do pipeline completo (loader → CPU → trap HLE → framebuffer → vídeo) — prova de que a
+  "encanação" básica funciona. Hoje a validação é feita direto com ROMs comerciais reais (ver
+  tabela abaixo), não mais com esse gerador sintético.
 
 ### Resultado real por ROM comercial (tabela de `docs/TESTING.md`)
 
@@ -158,6 +160,18 @@ limites é descartada silenciosamente (com log limitado para não poluir a saíd
 heap por blocos com first-fit e coalescing (`heap.c`) serve `MALLOC`/`FREE`/`REALLOC` de dentro
 da própria memória emulada.
 
+### Loader (`src/loader/`)
+
+Responsável por transformar um arquivo `.mod`/`.mif` em memória emulada pronta para execução e
+por resolver qual CLSID de applet o jogo expõe (`mod_loader.c`, `mif_parser.c`). A resolução de
+CLSID tenta, em ordem: (1) ler o `.mif` companheiro (metadados legíveis), (2) escanear
+constantes conhecidas dentro do próprio `.mif` **e**, quando presente, do `.bar` companheiro
+(varredura de arquivo inteiro, não só os primeiros bytes), (3) inferir pela convenção de path
+`mod/<id>/<jogo>.mod` do dump. Também detecta (sem validar conteúdo) um `.sig` companheiro, fato
+de compatibilidade observado no Infuse — ver `docs/THIRD_PARTY.md`. Essa é a camada que ainda
+bloqueia jogos com CLSID desconhecido (ex.: Zeeboids); `analyze_clsids.ps1` na raiz do repo é a
+ferramenta usada para varrer o romset externo em busca desses CLSIDs.
+
 ### HLE do BREW/AEE (`src/brew/`)
 
 O subsistema mais importante do projeto. Cada "chamada de API" do jogo é, na prática, um branch
@@ -189,9 +203,15 @@ argumentos entre registradores para tolerar stubs de bootstrap ROPI diferentes).
 ### GPU e áudio (`src/gpu/`, `src/audio/`)
 
 Framebuffer fixo de 640×480 em XRGB8888, apoiado diretamente na VRAM emulada, com preenchimento,
-retângulos, linhas (Bresenham) e blit com chave de transparência. Mixer de áudio de 16 vozes,
-44.1kHz estéreo, com resampling de ponto fixo a partir de PCM de 8 ou 16 bits — tudo acionado
-pelas mesmas traps HLE de `ISound`/`IDisplay`/`IBitmap`.
+retângulos, linhas (Bresenham) e blit com chave de transparência para o caminho `IDisplay` 2D
+clássico. Além disso, `src/gpu/egl_gl.c` (hoje o maior arquivo do projeto, ~1400 linhas) HLE'a
+`AEECLSID_EGL`/`AEECLSID_GL` — a convenção de chamada "sem `this`" do wrapper GL da Qualcomm foi
+decodificada (ver `docs/PROGRESS.md`), e um rasterizador de software mínimo (`raster_triangle()`)
+já desenha `GL_TRIANGLE_FAN` texturizado de verdade a partir de `glDrawArrays`, com matrizes
+fixed-point, scissor test aplicado e `glReadPixels` real. Boa parte do resto do estado GLES 1.x
+(`glFog*`, `glLight*`, `glMaterial*`, depth/stencil...) é aceita mas ainda não afeta a
+rasterização. Mixer de áudio de 16 vozes, 44.1kHz estéreo, com resampling de ponto fixo a partir
+de PCM de 8 ou 16 bits — tudo acionado pelas mesmas traps HLE de `ISound`/`IDisplay`/`IBitmap`.
 
 ---
 
@@ -209,7 +229,10 @@ pelas mesmas traps HLE de `ISound`/`IDisplay`/`IBitmap`.
   facilitando acesso a `mif/`, `music/`, `images/` etc.
 - **BREW HLE**: 117 slots de `AEEHelperFuncs` (44 implementados) + 128 slots de `IShell` real
   (~21 implementados) + stubs COM genéricos para ~40 class IDs conhecidos.
-- **GPU**: framebuffer 640×480 XRGB8888, fill/rect/linha/blit com transparência.
+- **GPU**: framebuffer 640×480 XRGB8888 (fill/rect/linha/blit com transparência) **+** HLE de
+  `EGL`/`GLES 1.x` com rasterizador de software mínimo: `glDrawArrays` (`GL_TRIANGLE_FAN`)
+  desenha triângulos texturizados de verdade, scissor test funcional, `glReadPixels` real; estado
+  de fog/light/material/depth/stencil aceito mas ainda sem efeito na rasterização.
 - **Áudio**: mixer 44.1kHz estéreo, 16 vozes, PCM U8/S16 com resampling — sem MIDI/MP3/ADPCM.
 - **Input**: RetroPad mapeado para um bitmask de botões Zeebo, entregue ao guest via o mecanismo
   de sinal de evento HID do BREW.
@@ -241,16 +264,18 @@ cmake --build --preset desktop-release
 
 Resultado via CMake no Windows: `build/desktop-release/zeebo_libretro.dll`.
 
-> Este repositório inclui um `Directory.Build.props` que fixa versões de SDK/toolset — ele existe
-> para contornar um problema de descoberta automática de SDK nesta máquina específica de
-> desenvolvimento. Numa instalação limpa do Visual Studio 2022 isso normalmente não é necessário;
-> se o build falhar por erro de toolset/SDK não encontrado, tente passar os mesmos valores
+> O repositório chegou a incluir um `Directory.Build.props` fixando versões de SDK/toolset para
+> contornar um problema de descoberta automática de SDK numa máquina específica de
+> desenvolvimento — esse arquivo foi **removido** (`aa3dfe2`, 2026-07-10) porque o
+> auto-discovery do toolset funciona normalmente numa instalação padrão do Visual Studio 2022. Se
+> o build falhar por erro de toolset/SDK não encontrado numa máquina diferente, passe os valores
 > explicitamente, por exemplo:
 > ```powershell
 > msbuild zeebo_libretro.sln /p:Configuration=Release /p:Platform=x64 `
 >     /p:VCToolsInstallDir="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\" `
 >     /p:VCToolsVersion=14.44.35207
 > ```
+> Um atalho de build rápido também está disponível em `quick_build.ps1` na raiz do repo.
 
 ### Linux/macOS (Makefile ou CMake)
 
@@ -358,7 +383,10 @@ Da seção "Próximos Passos" de `docs/PROGRESS.md`:
       `glVertexPointer` às vezes recebe um endereço inválido (ver `docs/PROGRESS.md`).
 - [ ] Reverse engineering mais profundo do formato MOD real (entry point, relocação completa).
 - [ ] Resolver vtables/class IDs reais restantes do BREW para outros títulos (Double Dragon,
-      Zeeboids ainda não têm CLSID/fluxo de boot confirmados).
+      Zeeboids ainda não têm CLSID/fluxo de boot confirmados). O loader agora varre o `.mif`
+      inteiro e também o `.bar` companheiro em busca de CLSID (não só os primeiros 8KB do
+      `.mif`) — falta rodar contra o romset completo (68 jogos) e medir quantos títulos passam
+      a resolver CLSID automaticamente.
 - [ ] Parsing estrutural completo de MIF e BAR (hoje: extração heurística de nome e apenas
       detecção de existência, respectivamente).
 - [ ] Popular `tests/test_cpu.c` e `tests/test_memory.c` (hoje são arquivos vazios/placeholder —
@@ -415,12 +443,13 @@ C**, não copiado de nenhum dos projetos abaixo. O rastreamento completo, por as
 
 ```
 zeebo_libretro/
-├── src/                    # Código-fonte do core (compilado hoje via .vcxproj)
+├── src/                    # Código-fonte do core (compilado hoje via .vcxproj), ~15.5k linhas
 │   ├── core/                → integração libretro (retro_*), loop principal
 │   ├── cpu/                 → interpretador ARM/Thumb
 │   ├── memory/               → mapa de memória, heap
+│   ├── loader/                → parsing de MOD/MIF/BAR, resolução de CLSID do applet
 │   ├── brew/                 → HLE do BREW/AEE (IShell, helpers, boot lifecycle)
-│   ├── gpu/                  → framebuffer, primitivas de desenho
+│   ├── gpu/                  → framebuffer 2D + HLE de EGL/GLES 1.x (egl_gl.c, o maior arquivo)
 │   ├── audio/                 → mixer PCM
 │   ├── input/                 → RetroPad → bitmask Zeebo
 │   └── debug/                  → log, trace de PC, classificador de instrução
@@ -432,6 +461,7 @@ zeebo_libretro/
 ├── docs/                    # PROGRESS.md, TESTING.md, THIRD_PARTY.md, PLANNING_ARCHIVE.md
 ├── BLOCKERS_ANALYSIS.md     # levantamento tabular de bloqueadores + checklist por jogo
 ├── analyze_clsids.ps1       # script exploratório: varre o romset externo listando CLSIDs por jogo
+├── quick_build.ps1          # atalho de build rápido (Release x64)
 ├── reference/               # cópias locais de projetos de referência (majoritariamente gitignored)
 ├── zeebo_libretro/          # arquivos de projeto do Visual Studio (.vcxproj)
 ├── zeebo_libretro.sln       # solução Visual Studio 2022

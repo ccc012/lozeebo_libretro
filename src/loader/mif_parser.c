@@ -14,22 +14,24 @@
 /* Procura CLSIDs de applets conhecidos dentro de um arquivo */
 static uint32_t scan_file_for_clsid(const char *path) {
     FILE *f = fopen(path, "rb");
-    unsigned char buf[8192];
+    unsigned char buf[32768];
     size_t n, i, k;
     if (!f) return 0;
-    n = fread(buf, 1, sizeof(buf), f);
-    fclose(f);
-    for (i = 0; i + 4 <= n; i++) {
-        uint32_t v = (uint32_t)buf[i] | ((uint32_t)buf[i+1] << 8) |
-                     ((uint32_t)buf[i+2] << 16) | ((uint32_t)buf[i+3] << 24);
-        for (k = 0; k < ZAEE_KNOWN_APPLET_COUNT; k++) {
-            if (v == ZAEE_KNOWN_APPLETS[k].clsid) {
-                LOGI("mif: applet '%s' (0x%08X) em %s",
-                     ZAEE_KNOWN_APPLETS[k].name, v, path);
-                return v;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
+        for (i = 0; i + 4 <= n; i++) {
+            uint32_t v = (uint32_t)buf[i] | ((uint32_t)buf[i+1] << 8) |
+                         ((uint32_t)buf[i+2] << 16) | ((uint32_t)buf[i+3] << 24);
+            for (k = 0; k < ZAEE_KNOWN_APPLET_COUNT; k++) {
+                if (v == ZAEE_KNOWN_APPLETS[k].clsid) {
+                    LOGI("mif: applet '%s' (0x%08X) em %s",
+                         ZAEE_KNOWN_APPLETS[k].name, v, path);
+                    fclose(f);
+                    return v;
+                }
             }
         }
     }
+    fclose(f);
     return 0;
 }
 
@@ -89,6 +91,18 @@ uint32_t zmif_find_applet_clsid(const char *mod_path) {
         if (dot && len < sizeof(candidate)) {
             memcpy(candidate, mod_path, dot - mod_path);
             strcpy(candidate + (dot - mod_path), ".mif");
+            clsid = scan_file_for_clsid(candidate);
+            if (clsid) return clsid;
+        }
+    }
+
+    /* 2b. Se houver BAR companheiro, ele pode conter o nome do applet */
+    {
+        size_t len = strlen(mod_path);
+        const char *dot = strrchr(mod_path, '.');
+        if (dot && len < sizeof(candidate)) {
+            memcpy(candidate, mod_path, dot - mod_path);
+            strcpy(candidate + (dot - mod_path), ".bar");
             clsid = scan_file_for_clsid(candidate);
             if (clsid) return clsid;
         }
