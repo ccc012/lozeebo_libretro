@@ -7,8 +7,9 @@
  *      +0x04 branch ARM -> mod info
  *      +0x08 "BREW"  +0x0C versao  +0x10 tam. header (0x40)
  *      +0x1C code_size  +0x20 data_size  +0x24 bss_size
- *    Codigo ROPI, base de link 0 -> VA == offset do arquivo.
- *    Carregamos a imagem inteira em VA 0 e zeramos o BSS.
+ *    Codigo ROPI, base de link 0. Nos mod1 com bootstrap PIC, +0x18 informa
+ *    o deslocamento do codigo real (normalmente 0x200): copiamos code+data
+ *    desse ponto para VA 0, zeramos o BSS e pulamos o scatter-loader ARMCC.
  *
  * 2. Binario ARM "cru" (Double Dragon, Family Pack, test ROMs):
  *    entry no offset 0 (ou branch inicial), sem header.
@@ -175,19 +176,45 @@ bool zmod_load(const void *data, size_t size, const char *path,
 
     if (has_brew_hdr) {
         uint32_t hdr_size  = rd32(bytes + hdr_off + 0x10);
+        uint32_t code_off  = rd32(bytes + hdr_off + 0x18);
         uint32_t code_size = rd32(bytes + hdr_off + 0x1C);
         uint32_t data_size = rd32(bytes + hdr_off + 0x20);
         uint32_t bss_size  = rd32(bytes + hdr_off + 0x24);
+        size_t source_off = (size_t)hdr_off + code_off;
+        size_t image_size = (size_t)code_size + data_size;
+        bool hle_scatter = code_off >= hdr_size && code_off <= 0x10000u &&
+                           source_off <= size && image_size > 0 &&
+                           image_size <= size - source_off &&
+                           image_size <= ZMEM_RAM_SIZE &&
+                           bss_size <= ZMEM_RAM_SIZE - image_size;
 
-        out->entry = hdr_off + branch_target(rd32(bytes + hdr_off), 0);
-
-        /* zera o BSS depois de codigo+dados */
-        if (bss_size > 0 && bss_size < ZMEM_RAM_SIZE / 2) {
-            uint32_t bss_start = hdr_off + hdr_size + code_size + data_size;
+        if (hle_scatter) {
+            uint32_t bss_start = (uint32_t)image_size;
             uint32_t i;
+            if (!zmem_write_block(0, bytes + source_off, (uint32_t)image_size)) {
+                LOGE("mod1: falha ao aplicar scatter-load HLE");
+                return false;
+            }
             for (i = 0; i < bss_size; i++)
                 zmem_write8(bss_start + i, 0);
-            LOGI("mod1: BSS zerado em 0x%08X (%u bytes)", bss_start, bss_size);
+            out->entry = 0;
+            out->code_size = (uint32_t)image_size;
+            LOGI("mod1: bootstrap PIC pulado via HLE "
+                 "(arquivo+0x%X -> VA 0, imagem=%u)",
+                 (unsigned)source_off, (unsigned)image_size);
+            LOGI("mod1: BSS zerado em 0x%08X (%u bytes)",
+                 bss_start, bss_size);
+        } else {
+            out->entry = hdr_off + branch_target(rd32(bytes + hdr_off), 0);
+            /* Formato antigo: BSS depois de cabecalho, codigo e dados. */
+            if (bss_size > 0 && bss_size < ZMEM_RAM_SIZE / 2) {
+                uint32_t bss_start = hdr_off + hdr_size + code_size + data_size;
+                uint32_t i;
+                for (i = 0; i < bss_size; i++)
+                    zmem_write8(bss_start + i, 0);
+                LOGI("mod1: BSS zerado em 0x%08X (%u bytes)",
+                     bss_start, bss_size);
+            }
         }
         LOGI("mod1: hdr=0x%X code=%u data=%u bss=%u entry=0x%08X",
              hdr_off, code_size, data_size, bss_size, out->entry);
