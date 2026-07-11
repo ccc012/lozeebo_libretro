@@ -271,8 +271,32 @@ documentacao):
   `docs/THIRD_PARTY.md` (Infuse exige um `.sig` do mesmo nome ao lado do
   conteudo, embora nao valide o conteudo dele).
 
+## Sessao 2026-07-11 (2): Loader varre o arquivo inteiro em busca de CLSID + escaneia .bar
+
+`src/loader/mif_parser.c` (`scan_file_for_clsid()`): antes lia so os primeiros 8KB do arquivo
+para procurar constantes de CLSID conhecidas; jogos com CLSID mais adiante no `.mif` (ou fora
+dessa janela) nunca eram resolvidos por essa via, caindo no fallback de "nome de arquivo
+conhecido" (so cobre os titulos ja catalogados manualmente) ou em CLSID desconhecido. Agora:
+
+- Buffer aumentado de 8KB para 32KB e a leitura passa a **varrer o arquivo inteiro** em blocos
+  (`while (fread(...) > 0)`), nao mais um unico chunk inicial.
+- Alem do `.mif`, o loader agora tambem escaneia o `.bar` companheiro (quando presente) pela
+  mesma tecnica, ja que alguns titulos podem ter o CLSID apenas nos recursos.
+- Vazamento de file handle corrigido: o `fclose()` antigo rodava antes do loop de busca (arquivo
+  ja fechado durante o scan em builds antigos que leem incrementalmente); agora fecha so ao sair
+  do loop ou ao encontrar o CLSID.
+
+Objetivo direto: aumentar a chance de resolver o CLSID de Zeeboids e de outros titulos alem do
+Tier 1, sem exigir cadastro manual de nome de arquivo para cada um dos 68 jogos do romset.
+**Ainda nao testado contra o romset completo** - proximo passo e rodar `analyze_clsids.ps1` (ou
+o loader de verdade) contra os 68 titulos e registrar quantos CLSIDs novos aparecem.
+
 ## Estatisticas
-- Modulos implementados: 27 arquivos .c/.h (~3500 linhas)
+- Modulos implementados: ~45 arquivos .c/.h em `src/` (~15.500 linhas .c+.h; ~6.700 so em .c),
+  distribuidos em `core/`, `cpu/`, `memory/`, `loader/`, `brew/`, `gpu/`, `audio/`, `input/`,
+  `debug/` - crescimento significativo desde a contagem antiga de "27 arquivos / ~3500 linhas"
+  (fase de esqueleto inicial); `src/gpu/egl_gl.c` sozinho hoje tem ~1400 linhas, o maior arquivo
+  do projeto, refletindo o peso do HLE de EGL/GLES 1.x.
 - Instrucoes ARM: cobertura completa do conjunto basico ARMv6 user-mode
 - Performance: 60 MIPS no interpretador (Release x64)
 
