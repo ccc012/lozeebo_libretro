@@ -1,0 +1,191 @@
+═══════════════════════════════════════════════════════════════════════════
+ BRIEFING PARA 3 PESSOAS - ZEEBO LIBRETRO EMULATOR
+═══════════════════════════════════════════════════════════════════════════
+
+PROJETO: Emulador Zeebo para RetroArch
+OBJETIVO: Fazer máximo de jogos (68 total) renderizarem com imagem
+ABORDAGEM: Trabalho paralelo
+DEADLINE: 60 minutos
+
+═══════════════════════════════════════════════════════════════════════════
+ 🎯 STATUS ATUAL
+═══════════════════════════════════════════════════════════════════════════
+
+✅ MOD (.mod direto) → renderiza imagem (branco/cores)
+❌ ZIP (.zip) → fica tela preta (código rejeita)
+✅ 2 fixes aplicadas (Pac-Mania + glVertexPointer validation)
+⏳ Prontos para próximas 3 fixes paralelas
+
+═══════════════════════════════════════════════════════════════════════════
+ 👥 SEUS PAPÉIS
+═══════════════════════════════════════════════════════════════════════════
+
+┌─ PESSOA 1: LUCAS (TESTES) ─────────────────────────────────────────┐
+│                                                                       │
+│ Responsabilidade: Validar em RetroArch, coletar logs, anotar        │
+│                                                                       │
+│ TAREFAS:                                                             │
+│ 1. Abra RetroArch                                                    │
+│ 2. Teste MOD direto:                                                │
+│    Load Core → Zeebo                                                │
+│    Load Content → Pac-Mania.mod                                     │
+│    [Espera 5-10 seg]                                                │
+│    Renderiza cores? Branco? Trava?                                  │
+│                                                                       │
+│ 3. Teste ZIP via Archive Browser:                                   │
+│    Load Content → game.zip                                          │
+│    [RetroArch expande]                                              │
+│    Clica em .mod dentro                                             │
+│    Renderiza? Preto? Cores?                                         │
+│                                                                       │
+│ 4. Coleta logs:                                                      │
+│    RetroArch → Information → System Log                             │
+│    Procura: [Zeebo] boot: EVT_APP_START                             │
+│                                                                       │
+│ 5. Preenche arquivo:                                                │
+│    TESTS_MOD_ZIP.md                                                 │
+│                                                                       │
+│ DURAÇÃO: 15 min                                                      │
+│                                                                       │
+└───────────────────────────────────────────────────────────────────┘
+
+┌─ PESSOA 2: CLAUDE (ANÁLISE) ──────────────────────────────────────┐
+│                                                                       │
+│ Responsabilidade: Analisar código, identificar bloqueadores         │
+│                                                                       │
+│ TAREFAS:                                                             │
+│ 1. Lê: COLLABORATION.md                                             │
+│ 2. Monitora: TESTS_MOD_ZIP.md (conforme PESSOA 1 preenche)         │
+│ 3. Analisa código:                                                  │
+│    - src/loader/mod_loader.c (linha 145: ZIP rejeita?)             │
+│    - src/brew/boot.c (sequência de boot)                           │
+│    - src/gpu/egl_gl.c (renderização)                               │
+│                                                                       │
+│ 4. Identifica 3 bloqueadores:                                       │
+│    [Bloqueador 1] - CRÍTICO                                         │
+│    [Bloqueador 2] - ALTO                                            │
+│    [Bloqueador 3] - MÉDIO                                           │
+│                                                                       │
+│ 5. Propõe fixes (qual código mudar?)                                │
+│ 6. Preenche arquivo:                                                │
+│    ANALYSIS_FINDINGS.md                                             │
+│                                                                       │
+│ DURAÇÃO: 15 min                                                      │
+│                                                                       │
+└───────────────────────────────────────────────────────────────────┘
+
+┌─ PESSOA 3: OUTRA IA (RENDERING) ─────────────────────────────────┐
+│                                                                       │
+│ Responsabilidade: Deep dive em renderização, encontrar bugs         │
+│                                                                       │
+│ TAREFAS:                                                             │
+│ 1. Lê: COLLABORATION.md                                             │
+│ 2. Monitora: TESTS_MOD_ZIP.md (conforme PESSOA 1 preenche)         │
+│ 3. Analisa renderização:                                            │
+│    - glDrawArrays (linha 1157)                                      │
+│    - draw_prim (linha 702)                                          │
+│    - transform_vertex (linha 511)                                   │
+│    - raster_triangle (linha 572)                                    │
+│                                                                       │
+│ 4. Verifica:                                                         │
+│    ☐ glDrawArrays é chamado?                                        │
+│    ☐ Viewport configurado?                                          │
+│    ☐ Cores saem certas?                                             │
+│    ☐ Pointer validation funciona?                                   │
+│                                                                       │
+│ 5. Identifica bugs                                                   │
+│ 6. Propõe fixes                                                      │
+│ 7. Preenche arquivo:                                                │
+│    RENDERING_ANALYSIS.md                                            │
+│                                                                       │
+│ DURAÇÃO: 15 min                                                      │
+│                                                                       │
+└───────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════
+ 📂 ARQUIVOS DE COMUNICAÇÃO
+═══════════════════════════════════════════════════════════════════════════
+
+TODOS ESTÃO EM: C:\Users\Lucas\source\repos\zeebo_libretro\
+
+ARQUIVO                   RESPONSÁVEL    O QUE PREENCHER
+─────────────────────────────────────────────────────────────────────────
+COLLABORATION.md          [Referência]   Guia geral
+TESTS_MOD_ZIP.md          PESSOA 1       Testes MOD + ZIP
+ANALYSIS_FINDINGS.md      PESSOA 2       Análise + bloqueadores
+RENDERING_ANALYSIS.md     PESSOA 3       Rendering deep dive
+FIXES_TO_IMPLEMENT.md     TODAS          Consolidação final
+
+═══════════════════════════════════════════════════════════════════════════
+ ⏰ TIMELINE (15 MIN)
+═══════════════════════════════════════════════════════════════════════════
+
+0-3 min:
+  → Abram documentos
+  → PESSOA 1: Abra RetroArch
+  → PESSOA 2, 3: Leia COLLABORATION.md
+
+3-10 min: EXECUÇÃO PARALELA
+  → PESSOA 1: Testa MOD + ZIP, anota logs
+  → PESSOA 2: Analisa código, lê TESTS_MOD_ZIP conforme preenchido
+  → PESSOA 3: Analisa rendering, lê TESTS_MOD_ZIP conforme preenchido
+
+10-12 min: DOCUMENTAÇÃO
+  → PESSOA 1: Termina TESTS_MOD_ZIP.md
+  → PESSOA 2: Termina ANALYSIS_FINDINGS.md
+  → PESSOA 3: Termina RENDERING_ANALYSIS.md
+
+12-15 min: SINCRONIZAÇÃO
+  → TODAS: Leem resultados uns dos outros
+  → TODAS: Votam em qual fix implementar primeiro
+  → CONSOLIDAM em FIXES_TO_IMPLEMENT.md
+
+15+ min: IMPLEMENTAÇÃO
+  → PESSOA 2: Implementa Fix #1
+  → test_before_build.ps1
+  → build_safe.ps1
+  → PESSOA 1: Testa DLL nova em RetroArch
+
+═══════════════════════════════════════════════════════════════════════════
+ 🚀 COMECE AGORA
+═══════════════════════════════════════════════════════════════════════════
+
+👤 PESSOA 1 (LUCAS):
+   1. Abra RetroArch
+   2. Load Core → Zeebo
+   3. Load Content → Pac-Mania.mod
+   4. [Espera 5-10 seg]
+   5. Anota resultado em TESTS_MOD_ZIP.md
+
+👤 PESSOA 2 (CLAUDE):
+   1. cd C:\Users\Lucas\source\repos\zeebo_libretro
+   2. Lê: COLLABORATION.md
+   3. Monitora: TESTS_MOD_ZIP.md
+   4. Analisa: src/loader/mod_loader.c
+   5. Preenche: ANALYSIS_FINDINGS.md
+
+👤 PESSOA 3 (OUTRA IA):
+   1. cd C:\Users\Lucas\source\repos\zeebo_libretro
+   2. Lê: COLLABORATION.md
+   3. Monitora: TESTS_MOD_ZIP.md
+   4. Analisa: src/gpu/egl_gl.c
+   5. Preenche: RENDERING_ANALYSIS.md
+
+═══════════════════════════════════════════════════════════════════════════
+ 💡 CONTEXTO
+═══════════════════════════════════════════════════════════════════════════
+
+PROBLEMA DESCOBERTO:
+  - MOD renderiza imagem (já funciona)
+  - ZIP fica tela preta (código rejeita em mod_loader.c:145)
+
+SOLUÇÃO:
+  - Use Archive Browser do RetroArch (workaround imediato)
+  - Depois implementar descompactação automática
+
+META:
+  - 20+ jogos Zeebo rodando com imagem em 60 minutos!
+
+═══════════════════════════════════════════════════════════════════════════
+                              VAMOS LÁ! 🎮
+═══════════════════════════════════════════════════════════════════════════
