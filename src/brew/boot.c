@@ -415,17 +415,18 @@ void zboot_on_guest_return(void) {
             g_cpu.halted = true;
             return;
         }
-        /* Diagnostico: struct AEEMod = {vtbl, IShell*, ph, pfnModCrInst} */
+        /* Layout observado no SDK: {vtbl, refcount, pIShell,
+         * pfnModCrInst, ...}. O campo +4 nao e o IShell. */
         LOGI("boot: AEEMod +0=0x%08X +4=0x%08X +8=0x%08X +12=0x%08X +16=0x%08X",
              zmem_read32(g_module_obj), zmem_read32(g_module_obj + 4),
              zmem_read32(g_module_obj + 8), zmem_read32(g_module_obj + 12),
              zmem_read32(g_module_obj + 16));
-        /* Se o slot do IShell nao aponta para nosso objeto, corrige
-         * (bootstraps ROPI variam a ordem dos args do AEEMod_Load) */
-        if (zmem_read32(g_module_obj + 4) != g_shell_obj) {
+        /* Se pIShell nao aponta para nosso objeto, corrige apenas +8 e
+         * preserva o refcount em +4. */
+        if (zmem_read32(g_module_obj + 8) != g_shell_obj) {
             LOGW("boot: corrigindo AEEMod.m_pIShell (era 0x%08X)",
-                 zmem_read32(g_module_obj + 4));
-            zmem_write32(g_module_obj + 4, g_shell_obj);
+                 zmem_read32(g_module_obj + 8));
+            zmem_write32(g_module_obj + 8, g_shell_obj);
         }
         /* pfnModCrInst invalido -> forca caminho dinamico (tecnica zeemu) */
         {
