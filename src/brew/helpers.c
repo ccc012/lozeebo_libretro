@@ -370,6 +370,12 @@ void zbrew_handle_helper(uint32_t id) {
     case 0x03C: /* wsprintf(dst,fmt,...) */
         g_cpu.r[0] = eformat(r0, 0x10000, r1, 2, NULL, 0);
         break;
+    case 0x040: /* STRTOWSTR(cs, wcs, wcsBufferSize) - AEEStdLib: src primeiro */
+        guest_strtowstr(r1, r0, r2);
+        break;
+    case 0x044: /* WSTRTOSTR(ws, s, sizeInBytes) - AEEStdLib: src primeiro */
+        guest_wstrtostr(r1, r0, r2);
+        break;
     case 0x058: { /* wstrlower */
         uint32_t i = 0;
         for (;;) {
