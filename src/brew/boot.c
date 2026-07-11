@@ -565,6 +565,16 @@ void zboot_tick(uint32_t elapsed_ms) {
                 LOGI("HID: uid=0x%08X down=%u callback=0x%08X user=0x%08X",
                      uid, down ? 1u : 0u, callback, user);
             }
+            /* Convencao BREW: ISignalCtl e so um "acorde-me" (PFNNOTIFY(pUser)),
+             * sem parametros de evento - o jogo consulta os detalhes depois via
+             * IHIDDevice_GetNextEvent (case 9, que ja devolve id/down/uid).
+             * Antes desta chamada, o callback so era logado e nunca disparado:
+             * o jogo nunca acordava do halted apos EVT_APP_START. */
+            if (callback) {
+                g_state = BOOT_SIGNAL_CALL;
+                guest_call(callback, user, 0, 0, 0);
+                return;
+            }
         }
     }
 
