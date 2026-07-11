@@ -164,18 +164,112 @@ Depois do rasterizador: testar no RetroArch real e gravar o video.
 - **Causa raiz encontrada**: a guarda de trap HLE em `src/cpu/cpu.c` (`if (pc >= ZMEM_HLE_BASE)`) nao tinha limite superior. Qualquer PC corrompido/descarrilado `>= 0xF0000000` era silenciosamente absorvido como uma falsa "chamada de API nao implementada" (logada como aviso inofensivo, retornando `EFAILED` e retomando o guest via `BX LR`) em vez de ser sinalizado como crash. Isso deixava o codigo do Pac-Mania preso num loop infinito dentro do `CreateInstance`, crescendo o SP em 0x58 bytes por iteracao, de forma invisivel.
 - **Correcao aplicada e verificada**: adicionado `ZMEM_HLE_END` (`0xF0001000u`) em `src/memory/memory.h`; a guarda do `cpu.c` passou a ser `if (pc >= ZMEM_HLE_BASE && pc < ZMEM_HLE_END)`. Qualquer coisa fora da janela real de trap agora cai na checagem ja existente de `pc_fetchable()`/"CPU descarrilou". Confirmado via rebuild + execucao contra a ROM real do Pac-Mania: o emulador agora para de forma limpa com um trace completo de PC em vez de entrar em loop silencioso para sempre.
 - **Nova evidencia de diagnostico (pos-fix)**: com a guarda corrigida, a CPU descarrila de forma limpa em `PC=0xFF000000`, com `LR=0x0000115C` e, principalmente, `SP=0x30000048` no momento do descarrilamento - dentro da faixa de endereco da VRAM (`0x30000000-0x301FFFFF`), e nao da regiao real de stack (`0x2FC00000-0x2FFFFFFF`). A VRAM e pre-preenchida com a palavra literal de 32 bits `0xFF000000` na inicializacao (`framebuffer.c`, `zfb_clear(0xFF000000u)`, cor de limpeza), o que explica por que qualquer leitura de uma "stack pointer" residente em VRAM retorna exatamente `0xFF000000` e acaba sendo usada como destino de branch. O trace mostra o guest saltando `0xF0000C04 -> 0x115C -> 0x1160 -> 0x1164 -> 0xEB4 -> 0xEB8 -> 0xFF000000` antes de descarrilar.
-- **Proximo passo (ainda nao feito)**: descobrir por que o SP sai da regiao real de stack (`0x2FC00000-0x2FFFFFFF`) e entra na VRAM (`0x30000000+`) durante o tratamento do `CreateInstance` do Pac-Mania. Hipotese principal (nao confirmada): `zbrew_handle_stub()` em `src/brew/boot.c`, no case 5 (CLSID `0x0100101Cu`), hoje escreve `NULL` nos dois out-params de stack do caller em vez de construir sub-objetos de stub reais - diferente do padrao que ja funciona no case 3 (`SignalCBFactory`, no mesmo arquivo), que aloca objetos reais via `make_stub_interface()`. Isso pode estar empurrando o codigo do guest para um caminho de fallback nunca testado que calcula mal seu proprio frame de stack. Tambem foi corrigido, nesse mesmo bloco (case 5), um comentario obsoleto que afirmava incorretamente que os out-params ficavam "no default 0xFF da stack" - isso nao procede: `memory.c` zera tudo na inicializacao, nao ha veneno de stack 0xFF neste modelo do emulador.
+- **Hipotese confirmada e corrigida em `aa3dfe2` (2026-07-10)**: `zbrew_handle_stub()` em `src/brew/boot.c`, no case 5 (CLSID `0x0100101Cu`), escrevia `NULL` nos dois out-params de stack do caller em vez de construir sub-objetos de stub reais - diferente do padrao que ja funcionava no case 3 (`SignalCBFactory`). Corrigido para alocar objetos reais via `make_stub_interface()`, no mesmo padrao do case 3. **Ainda pendente**: re-testar a ROM real do Pac-Mania de ponta a ponta contra o build atual e confirmar que o `CreateInstance` completa sem descarrilar (o fix foi validado por build/smoke parcial, nao por um passe completo confirmado no RetroArch - ver sessao 2026-07-10 (2/3) abaixo).
 
 ### Checklist
 - [ ] Reverse engineering do formato MOD real (Ghidra) - entry point, relocacao completa
 - [ ] Vtables/class IDs reais do BREW (RE do Infuse/documentacao arquivada) - CLSIDs do stub `0x0100101C`, Pac-Mania (`0x01087B72`) e Zeebo Family Pack (`0x010903C6`) ja resolvidos via MIF real; demais titulos ainda pendentes
 - [x] IShell_SetTimer + inicio do event loop de applet: `EVT_APP_START=0` tratado, Zeebo Family Pack chega ao estado "rodando"
 - [x] Testar com ROM real do Zeebo Family Pack: boot completo ate "rodando" (ver secao de validacao acima)
-- [ ] Resolver o desvio do SP para a VRAM durante o `CreateInstance` do Pac-Mania (bloqueio atual, ver diagnostico acima)
-- [ ] Portar a pilha EGL/OpenGL ES GPLv3 do Zeemu e conecta-la ao framebuffer libretro (bloqueio atual do Zeebo Family Pack)
+- [x] Corrigir o desvio do SP para a VRAM durante o `CreateInstance` do Pac-Mania (fix aplicado em `aa3dfe2`; falta reconfirmar com teste real end-to-end)
+- [x] Rasterizador GLES 1.x minimo portado e conectado ao framebuffer libretro (`7cc847a`/`b427955`/`aa3dfe2`/`7a55083` - Family Pack ja desenha triangulos texturizados reais, mas coordenadas fora de tela e vertex pointer `0x3` invalido ainda bloqueiam um frame correto, ver sessao 2026-07-10 (2/3))
 - [ ] Popular `tests/test_cpu.c` e `tests/test_memory.c` (ainda vazios)
 - [ ] Save states (serialize da CPU+memoria)
 - [ ] ADPCM/MP3/MIDI (audio completo)
+
+## Sessao 2026-07-10 (2/3): Rasterizador GLES 1.x minimo + vertex pointer via stack
+
+Sequencia de commits que levou o Family Pack do "so glClear branco" a desenhar
+formas de verdade:
+
+1. **`7cc847a` - Rasterizador GLES 1.x minimo ativo**: `raster_triangle()`
+   implementado em `egl_gl.c` (interpolacao baricentrica de cor), primeiros
+   pixels escritos com cores interpoladas na VRAM.
+2. **`b427955` - Vertex pointer data flow fixed**: descoberta de que
+   `glVertexPointer` as vezes recebe o endereco real dos dados no `stack[0]`
+   em vez de num registrador, quando `R3==SP` (convencao de bootstrap ROPI
+   observada no binario real). Antes disso o ponteiro lido era lixo
+   (`0xCCAFF500`). Resultado confirmado: um quadrilatero colorido com
+   gradiente renderizado e verificado visualmente (screenshot).
+3. **`aa3dfe2` - Fix Pac-Mania CreateInstance crash + Family Pack rendering**:
+   - Pac-Mania: `zbrew_handle_stub()` case 5 (CLSID `0x0100101C`) passou a
+     alocar objetos stub reais via `make_stub_interface()` em vez de escrever
+     `NULL` nos out-params — a hipotese registrada na secao anterior deste
+     documento sobre a causa da corrupcao de SP/VRAM. **Corrigido, mas ainda
+     nao re-testado ponta a ponta contra a ROM real apos o fix** (ver
+     checklist).
+   - Family Pack: `glDrawArrays` (`GLFN_DrawArrays`) passou a chamar
+     `draw_prim(mode, count, ...)` com os dados reais dos vertex arrays do
+     jogo em vez de `draw_test_quad()` hardcoded.
+   - Build: removido `Directory.Build.props` (toolset fixo causava falha de
+     descoberta de SDK numa maquina); blocos `{}` adicionados em `case`
+     labels para evitar redeclaracao de variavel.
+4. **`7a55083` - Enable DrawArrays with live game rendering**: o jogo passou
+   a renderizar via `GL_TRIANGLE_FAN` com texturas vinculadas de verdade
+   (`transform_vertex() -> raster_triangle() -> pixels`). **Problemas
+   conhecidos registrados no commit, ainda nao resolvidos**:
+   - Vertex pointers as vezes chegam como `0x00000003` (endereco invalido) —
+     precisa debugar a convencao de chamada nesse caso especifico.
+   - Vertices computam mas as coordenadas de tela ficam fora da area visivel
+     — sugere bug na transformacao (matriz/viewport), nao nos dados em si.
+   - Frame time ~1.65s/frame no smoke test (180 frames em ~99s) — bem abaixo
+     do alvo de 60 FPS; nao investigado ainda se e overhead do smoke test ou
+     do rasterizador.
+
+**Fixes desta sessao ainda sem confirmacao de teste real no RetroArch**: as
+correcoes do Pac-Mania (case 5) e do `glDrawArrays` real foram compiladas e
+validadas apenas por build bem-sucedido / smoke test parcial no momento em
+que foram commitadas — o proximo passo pendente e testar as duas ROMs de
+ponta a ponta no RetroArch com a DLL atual e atualizar esta secao com o
+resultado real (rodou / travou / onde).
+
+## Sessao 2026-07-11: Romset externalizado do repositorio
+
+`1ffb04d` removeu `tests/roms/real/` (Pac-Mania, Double Dragon, Zeeboids,
+Family Pack) e `tests/roms/make_test_rom.py` do repositorio Git — o pacote de
+ROMs comerciais (~2.1 GB, 68 jogos) nao deveria estar versionado. As ROMs
+agora vivem fora do repo, em
+`C:\Users\Lucas\Downloads\zeebo-romset-and-devtools\Zeebo\Zeebo\Zeebo Game & App Compilation - OpenZeebo\`
+(pacotes `.7z` por titulo, mais uma pasta `274804\` ja extraida com `mif/` e
+`mod/` de varios jogos juntos, usada para varredura em lote). Ver
+`tests/roms/README.md` para o guia atualizado e `docs/TESTING.md` para os
+caminhos de teste corrigidos. **Consequencia**: qualquer trecho de doc/codigo
+que ainda referencie `tests/roms/real/...` esta desatualizado — a fonte de
+verdade agora e a pasta externa.
+
+Nesta mesma sessao (ainda **nao commitado** no momento desta atualizacao de
+documentacao):
+
+- `analyze_clsids.ps1` (raiz do repo, nao rastreado): script exploratorio que
+  varre a pasta `274804\mif` e `274804\mod` do romset externo e lista CLSIDs
+  por jogo, priorizando os 10 primeiros titulos (Pac-Mania, Family Pack,
+  Double Dragon, Zeeboids, Crash Bandicoot, Quake, Quake II, FIFA 09,
+  Resident Evil 4, Super BurgerTime). Ferramenta de apoio para a estrategia
+  de "trabalho paralelo em varios jogos", ainda nao integrada a nenhum
+  pipeline de build/teste.
+- `BLOCKERS_ANALYSIS.md` (raiz do repo, nao rastreado): levantamento tecnico
+  dos bloqueadores atuais organizados por categoria (memoria/boot,
+  renderizacao, input, CLSID por jogo), com checklist de teste por jogo e
+  metricas-alvo por tier. Complementa este documento com uma visao mais
+  tabular/checklist; nao substitui o diagnostico detalhado acima.
+- `src/gpu/egl_gl.c`: estado GLES adicional aceito (ainda sem efeito visual
+  na rasterizacao simples, exceto scissor): `GL_CULL_FACE`, `GL_DEPTH_TEST` e
+  `GL_SCISSOR_TEST` agora sao rastreados via `glEnable`/`glDisable`; o
+  scissor test **e** aplicado de verdade em `raster_triangle()` (recorta
+  pixels fora do retangulo de `glScissor`). Alem disso, ~25 chamadas GLES que
+  antes cariam no `default` generico agora tem `case` proprio e documentado
+  como aceito-mas-sem-efeito (`glTexEnv*`, `glFog*`, `glLight*`,
+  `glMaterial*`, `glCullFace`, `glDepthFunc/Mask/Rangex`, `glStencil*`,
+  `glLineWidthx`, `glPointSizex`, `glPolygonOffsetx`, `glSampleCoveragex`,
+  `glFrontFace`, `glShadeModel`, `glLogicOp`, `glHint`, `glPixelStorei`) —
+  isso reduz ruido de log de "funcao GL desconhecida" sem mudar
+  comportamento. `glReadPixels` ganhou implementacao real (le da VRAM,
+  converte para `GL_RGBA/UNSIGNED_BYTE` ou RGB565 no buffer do guest).
+- `src/loader/mod_loader.c`: `zmod_try_probe_packaged_assets()` agora tambem
+  detecta (so log, sem parsing) um arquivo `.sig` companheiro do `.mod`
+  quando presente — fato de compatibilidade documentado em
+  `docs/THIRD_PARTY.md` (Infuse exige um `.sig` do mesmo nome ao lado do
+  conteudo, embora nao valide o conteudo dele).
 
 ## Estatisticas
 - Modulos implementados: 27 arquivos .c/.h (~3500 linhas)
@@ -187,3 +281,7 @@ Depois do rasterizador: testar no RetroArch real e gravar o video.
 - [x] Base funcional atual descrita em README e docs principais
 - [x] Licenca documentada como GPLv3
 - [x] Fontes de referencia e possiveis codigos reutilizados registradas em documento proprio
+- [x] 2026-07-11: docs sincronizados com o estado real pos-romset-externalizado
+      (README/TESTING com caminhos `tests/roms/real/...` estavam quebrados
+      apos `1ffb04d`; BLOCKERS_ANALYSIS.md e trabalho nao commitado de GL
+      state/`.sig` incorporados a este documento)
