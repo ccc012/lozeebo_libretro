@@ -85,17 +85,19 @@ jogabilidade na tela. É deliberadamente descrito assim para não gerar expectat
 
 | ROM | CLSID | Progresso atual |
 |---|---|---|
-| **Zeebo Family Pack** | `0x010903C6` | Mais avançado: passa por `AEEMod_Load`, `IModule_CreateInstance`, inicialização de display/arquivos/som/joystick, trata `EVT_APP_START` e chega a "rodando" **sem descarrilar**. A pilha EGL/GL já produz frames e apresenta o framebuffer; ainda falta cobertura maior de GLES 1.x para o menu completo e sprites mais ricos. |
-| **Pac-Mania** | `0x01087B72` | `AEEMod_Load` OK, entra em `IModule_CreateInstance`, stub BREW `0x0100101C` é criado — mas a CPU descarrila durante a saída do `CreateInstance` (o SP do guest sai da região real de stack e passa a apontar para dentro da VRAM; diagnóstico detalhado em `docs/PROGRESS.md`). |
-| **Double Dragon** | não fixado | `.mod` é uma variante "raw" sem o magic `BREW` esperado pelo parser atual — boot ainda não validado ponta a ponta. |
+| **Zeebo Family Pack** | `0x010903C6` | Mais avançado: passa por `AEEMod_Load`, `IModule_CreateInstance`, inicialização de display/arquivos/som/joystick, trata `EVT_APP_START` e chega a "rodando" **sem descarrilar**. O rasterizador GLES 1.x mínimo já desenha triângulos texturizados reais via `glDrawArrays` (um quadrilátero com gradiente já foi confirmado renderizando) — mas `glVertexPointer` às vezes recebe um endereço inválido (`0x00000003`) e os vértices computados caem fora da área visível, então ainda não há um frame de menu correto na tela. |
+| **Pac-Mania** | `0x01087B72` | `AEEMod_Load` OK, entra em `IModule_CreateInstance`, stub BREW `0x0100101C` é criado. O bug que fazia a CPU descarrilar (SP do guest saindo da stack real e apontando para a VRAM) tem uma correção aplicada (`zbrew_handle_stub()` case 5 passou a alocar stubs reais em vez de escrever `NULL`) — mas **ainda não foi re-testada ponta a ponta** contra a ROM real para confirmar que o `CreateInstance` completa sem descarrilar. Diagnóstico e status do fix em `docs/PROGRESS.md`. |
+| **Double Dragon** | `0x0102F789` | CLSID já identificado via MIF; `.mod` é uma variante "raw" sem o magic `BREW` esperado pelo parser atual — boot ainda não validado ponta a ponta. |
 | **Zeeboids** | não fixado | Ainda não validado ponta a ponta. |
 
 ### Por que nada é "jogável" ainda
 
-- O **Family Pack** já passa pela pilha EGL/GL mínima e apresenta frames, mas ainda depende de
-  cobertura mais ampla de GLES 1.x para o menu completo e os sprites mais ricos.
-- O bloqueio do **Pac-Mania** é um bug de corrupção de stack ainda não resolvido, com diagnóstico
-  já reduzido a um caso específico (`case 5` de `zbrew_handle_stub()` em `src/brew/boot.c`).
+- O **Family Pack** já desenha geometria texturizada real (não mais um quad de teste), mas um bug
+  de transformação/viewport ainda joga os vértices para fora da tela, e o resto da cobertura de
+  GLES 1.x (blend, depth, texturas completas) segue mínima.
+- O fix de corrupção de stack do **Pac-Mania** foi implementado (`case 5` de
+  `zbrew_handle_stub()` em `src/brew/boot.c`) mas ainda não foi confirmado com um teste real
+  ponta a ponta — é o próximo passo pendente, não um bloqueio em aberto sem diagnóstico.
 - Não há save states, nem exposição de memória para RetroAchievements/cheats — ambos
   explicitamente adiados ("fase 7"/futuro) no código atual.
 
@@ -305,8 +307,10 @@ Nenhuma, além de um compilador C e do toolchain do alvo. O core é C autocontid
 2. Abra o RetroArch → **Load Core** → procure por "Zeebo" (deve aparecer com uma string de
    versão, ex. `0.2-cpu`).
 3. **Load Content** → selecione um arquivo `.mod` ou `.mif` (extensões aceitas hoje:
-   `valid_extensions = "mod|mif"`). ROMs reais de exemplo já estão no repositório em
-   `tests/roms/real/` (Pac-Mania, Double Dragon, Zeebo Family Pack, Zeeboids).
+   `valid_extensions = "mod|mif|zip"`). As ROMs comerciais **não estão mais no repositório**
+   (removidas em `1ffb04d` para não versionar ~2.1 GB) — hoje vivem em
+   `C:\Users\Lucas\Downloads\zeebo-romset-and-devtools\` (68 jogos, ver
+   `tests/roms/README.md` para o guia rápido e `docs/TESTING.md` para os caminhos completos).
 4. Resultado esperado depende do jogo — veja a tabela em [Status atual](#status-atual). Em
    nenhum caso o RetroArch em si deve travar: se o boot emperrar, é a CPU emulada que para
    sozinha e loga `CPU descarrilou`.
@@ -325,15 +329,16 @@ cmake --preset desktop-smoke
 cmake --build --preset desktop-smoke
 ```
 
-Execução:
+Execução (ROM apontando para a pasta externa do romset — ver `docs/TESTING.md`):
 
 ```powershell
 build\desktop-smoke\libretro_smoke.exe build\desktop-smoke\zeebo_libretro.dll `
-    tests\roms\real\Pac-Mania\mod\276212\pacmania.mod
+    "C:\Users\Lucas\Downloads\zeebo-romset-and-devtools\Zeebo\Zeebo\Zeebo Game & App Compilation - OpenZeebo\274804\mod\276212\pacmania.mod"
 ```
 
-Troque o último caminho por `Double_Dragon`, `family_pack` ou `Zeeboids` para testar outros
- títulos. A saída (stderr) mostra linhas `[INFO]/[ERROR] [Zeebo] ...` de progresso do boot, linhas
+Troque o ID (`276212`) por `277229` (Family Pack), `274754` (Double Dragon) ou `279382`
+(Zeeboids) para testar outros títulos prioritários. A saída (stderr) mostra linhas
+`[INFO]/[ERROR] [Zeebo] ...` de progresso do boot, linhas
 periódicas `[VIDEO] 640x480 pitch=... first=0x########` confirmando que `retro_run` está
 produzindo frames, e, em caso de falha, uma linha `CPU descarrilou: fetch em 0x... (LR=...
 SP=...)` com um dump de trace de 64 PCs. Detalhes completos, incluindo como ler um crash, em
@@ -345,10 +350,12 @@ SP=...)` com um dump de trace de 64 PCs. Detalhes completos, incluindo como ler 
 
 Da seção "Próximos Passos" de `docs/PROGRESS.md`:
 
-- [ ] Resolver o desvio do SP para a VRAM durante o `IModule_CreateInstance` do Pac-Mania
-      (bloqueio atual mais bem diagnosticado — ver `docs/PROGRESS.md`).
-- [ ] Portar/implementar a pilha EGL/OpenGL ES e conectá-la ao framebuffer libretro (bloqueio
-      atual do Zeebo Family Pack, que já chega a "rodando").
+- [ ] Re-testar o fix do desvio do SP para a VRAM durante o `IModule_CreateInstance` do
+      Pac-Mania ponta a ponta contra a ROM real (correção já implementada em `aa3dfe2`, falta
+      confirmação de teste — ver `docs/PROGRESS.md`).
+- [ ] Corrigir a transformação/viewport do Family Pack: o rasterizador GLES 1.x mínimo já
+      desenha triângulos texturizados reais, mas os vértices caem fora da área visível e
+      `glVertexPointer` às vezes recebe um endereço inválido (ver `docs/PROGRESS.md`).
 - [ ] Reverse engineering mais profundo do formato MOD real (entry point, relocação completa).
 - [ ] Resolver vtables/class IDs reais restantes do BREW para outros títulos (Double Dragon,
       Zeeboids ainda não têm CLSID/fluxo de boot confirmados).
@@ -371,6 +378,7 @@ Da seção "Próximos Passos" de `docs/PROGRESS.md`:
 | [`docs/THIRD_PARTY.md`](docs/THIRD_PARTY.md) | Licenças e decisões de reuso de material de terceiros — o rastreador canônico para qualquer coisa referenciada de outro projeto. |
 | [`docs/PLANNING_ARCHIVE.md`](docs/PLANNING_ARCHIVE.md) | Arquivo do raciocínio de design pré-código (por que HLE, por que libretro como camada fina, glossário técnico) — não repete o que já está em PROGRESS.md. |
 | [`docs/PORTABILITY.md`](docs/PORTABILITY.md) | Guia de portabilidade: presets de CMake, famílias de plataforma, o que já está preparado no build e o que ainda depende de SDK/hardware/toolchain real. |
+| [`BLOCKERS_ANALYSIS.md`](BLOCKERS_ANALYSIS.md) | Levantamento tabular dos bloqueadores atuais por categoria (memória/boot, renderização, input, CLSID por jogo), checklist de teste por jogo e métricas-alvo por tier — visão complementar mais rápida de consultar que a timeline de `docs/PROGRESS.md`. |
 
 ---
 
@@ -420,9 +428,10 @@ zeebo_libretro/
 │   ├── libretro_smoke.c     # host libretro mínimo p/ teste rápido sem RetroArch
 │   ├── test_cpu.c / test_memory.c  # placeholders vazios (ainda sem suíte automatizada)
 │   └── roms/
-│       ├── make_test_rom.py   # gera ROM sintética hand-assembled
-│       └── real/              # ROMs comerciais reais (Pac-Mania, Double Dragon, ...)
+│       └── README.md          # aponta para o romset externo (ROMs comerciais não ficam no repo)
 ├── docs/                    # PROGRESS.md, TESTING.md, THIRD_PARTY.md, PLANNING_ARCHIVE.md
+├── BLOCKERS_ANALYSIS.md     # levantamento tabular de bloqueadores + checklist por jogo
+├── analyze_clsids.ps1       # script exploratório: varre o romset externo listando CLSIDs por jogo
 ├── reference/               # cópias locais de projetos de referência (majoritariamente gitignored)
 ├── zeebo_libretro/          # arquivos de projeto do Visual Studio (.vcxproj)
 ├── zeebo_libretro.sln       # solução Visual Studio 2022

@@ -39,13 +39,26 @@ cl /nologo /W3 tests\libretro_smoke.c /Fe:tests\libretro_smoke.exe
 
 ### Rodar contra uma ROM real
 
-```powershell
-tests\libretro_smoke.exe x64\Release\zeebo_libretro.dll `
-    tests\roms\real\Pac-Mania\mod\276212\pacmania.mod
+**As ROMs comerciais não ficam mais dentro do repositório** (removidas em `1ffb04d`,
+2026-07-11, para não versionar ~2.1 GB de conteúdo). Elas vivem em uma pasta externa:
+
+```
+C:\Users\Lucas\Downloads\zeebo-romset-and-devtools\Zeebo\Zeebo\Zeebo Game & App Compilation - OpenZeebo\
 ```
 
-Troque o caminho da ROM para testar os outros títulos disponíveis em `tests/roms/real/`:
-`Double_Dragon`, `family_pack`, `Pac-Mania`, `Zeeboids`.
+(pacotes `.7z` por jogo, mais uma pasta `274804\` já extraída com `mif/<id>.mif` e
+`mod/<id>/...` de vários títulos juntos — usada para varredura em lote, ver
+`analyze_clsids.ps1` na raiz do repo). Ver `tests/roms/README.md` para o guia rápido.
+
+```powershell
+tests\libretro_smoke.exe x64\Release\zeebo_libretro.dll `
+    "C:\Users\Lucas\Downloads\zeebo-romset-and-devtools\Zeebo\Zeebo\Zeebo Game & App Compilation - OpenZeebo\274804\mod\276212\pacmania.mod"
+```
+
+Troque o ID para testar os outros títulos prioritários (Tier 1): `276212` (Pac-Mania),
+`277229` (Zeebo Family Pack), `274754` (Double Dragon), `279382` (Zeeboids). Os demais
+64 jogos do pacote ainda não têm CLSID/fluxo de boot validado — ver
+`BLOCKERS_ANALYSIS.md` na raiz do repo para o checklist de teste por jogo.
 
 **O que observar na saída (stderr)**:
 - Linhas `[INFO] [Zeebo] ...` / `[ERROR] [Zeebo] ...` — progresso do boot (loader, CLSID
@@ -87,14 +100,14 @@ seja reconhecido e listado, não o número exato).
 ### Passo 3: Carregar uma ROM real
 
 ```
-Load Content → navegar até tests\roms\real\<jogo>\mod\... → selecionar o arquivo .mod
+Load Content → navegar até a pasta externa do romset (ver acima) → mod\<id>\... → selecionar o arquivo .mod
 ```
 
 Extensões aceitas hoje pelo core: `.mod`, `.mif` e `.zip`
 (`valid_extensions = "mod|mif|zip"` em `retro_get_system_info`). Em `.zip`, a extração
 é responsabilidade do frontend libretro; o core não mantém cache próprio persistente de
 arquivos extraídos. Não é mais necessário (nem representativo) criar um `.mod` fake —
-use as ROMs reais já presentes em `tests/roms/real/`.
+use as ROMs reais da pasta externa do romset (ver Passo 3 acima).
 
 **Resultado esperado**: depende do jogo (veja tabela abaixo). Em nenhum caso deve haver crash
 do próprio RetroArch — se o boot travar, deve ser a CPU emulada que para (`g_cpu.halted =
@@ -106,10 +119,10 @@ true`) e loga `CPU descarrilou`, mantendo o RetroArch responsivo.
 
 | ROM | CLSID | Progresso atual |
 |---|---|---|
-| Pac-Mania | `0x01087B72` | `AEEMod_Load` OK, entra em `IModule_CreateInstance`, stub BREW `0x0100101C` criado; a CPU descarrila na saída de `CreateInstance` (SP avança para a região de VRAM, fetch cai em `0xEA00000C`) |
-| Zeebo Family Pack | `0x010903C6` | Passa por `AEEMod_Load`, `IModule_CreateInstance`, init de display/arquivos/som/joystick; `CreateInstance` termina com applet válido, `EVT_APP_START` tratado, estado chega a "rodando" sem descarrilar; bloqueado agora porque o jogo cria `AEECLSID_EGL`/`AEECLSID_GL` (ainda stubs) e não produz frames de desenho |
-| Double Dragon | (não fixado) | `ddragonz.mod` é variante raw, sem o magic `BREW` esperado — ainda não validado ponta a ponta |
-| Zeeboids | (não fixado) | Ainda não validado ponta a ponta |
+| Pac-Mania | `0x01087B72` | `AEEMod_Load` OK, entra em `IModule_CreateInstance`, stub BREW `0x0100101C` criado. O bug de SP saindo para a VRAM durante o `CreateInstance` (fetch caía em `0xEA00000C`) tem correção aplicada (`aa3dfe2`, 2026-07-10 — case 5 de `zbrew_handle_stub()` passou a alocar stubs reais em vez de `NULL`), mas **ainda não foi re-testado ponta a ponta contra a ROM real** para confirmar que o `CreateInstance` completa sem descarrilar. |
+| Zeebo Family Pack | `0x010903C6` | Passa por `AEEMod_Load`, `IModule_CreateInstance`, init de display/arquivos/som/joystick, `EVT_APP_START` tratado, estado "rodando". O rasterizador GLES 1.x mínimo já desenha triângulos texturizados reais via `glDrawArrays`/`GL_TRIANGLE_FAN` (não mais um quad de teste) — um quadrilátero com gradiente já foi confirmado renderizando (`b427955`). Bloqueio atual: `glVertexPointer` às vezes recebe `0x00000003` (endereço inválido) e os vértices computados caem fora da área visível — sinal de bug na transformação/viewport, não nos dados em si (ver `7a55083`). |
+| Double Dragon | `0x0102F789` | CLSID já identificado via MIF, mas `ddragonz.mod` é variante raw, sem o magic `BREW` esperado — ainda não validado ponta a ponta. |
+| Zeeboids | (não fixado) | Ainda não validado ponta a ponta — CLSID desconhecido; `analyze_clsids.ps1` na raiz do repo existe para varrer o romset externo em busca dele. |
 
 Se o comportamento observado ao testar divergir do descrito aqui, é sinal de que ou algo
 quebrou ou algo avançou — atualize `docs/PROGRESS.md` de acordo.
