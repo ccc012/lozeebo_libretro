@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -78,15 +79,48 @@ static void input_poll(void) {}
 
 static unsigned input_frame;
 
+/* Simulacao de input pra teste ponta-a-ponta (Tarefa E, Rodada 5):
+ * segura o botao configurado via ZEEMU_SMOKE_BUTTON (padrao "A") por
+ * ZEEMU_SMOKE_HOLD_FRAMES (padrao 10) a partir de ZEEMU_SMOKE_PRESS_FRAME
+ * (padrao 120). Isso vira infraestrutura permanente pra testar o
+ * caminho RetroPad -> HID -> signal/EVT_KEY sem precisar do RetroArch. */
+static unsigned smoke_press_frame(void) {
+    const char *v = getenv("ZEEMU_SMOKE_PRESS_FRAME");
+    return v ? (unsigned)atoi(v) : 120u;
+}
+static unsigned smoke_hold_frames(void) {
+    const char *v = getenv("ZEEMU_SMOKE_HOLD_FRAMES");
+    return v ? (unsigned)atoi(v) : 10u;
+}
+static unsigned smoke_button_id(void) {
+    const char *v = getenv("ZEEMU_SMOKE_BUTTON");
+    if (!v) return RETRO_DEVICE_ID_JOYPAD_A;
+    if (!strcmp(v, "START")) return RETRO_DEVICE_ID_JOYPAD_START;
+    if (!strcmp(v, "B")) return RETRO_DEVICE_ID_JOYPAD_B;
+    if (!strcmp(v, "UP")) return RETRO_DEVICE_ID_JOYPAD_UP;
+    if (!strcmp(v, "DOWN")) return RETRO_DEVICE_ID_JOYPAD_DOWN;
+    return RETRO_DEVICE_ID_JOYPAD_A;
+}
+
 static int16_t input_state(unsigned port, unsigned device,
                            unsigned index, unsigned id)
 {
-    (void)port;
-    (void)device;
+    unsigned press, hold;
     (void)index;
-    if (port == 0 && device == RETRO_DEVICE_JOYPAD && index == 0 &&
-        id == RETRO_DEVICE_ID_JOYPAD_A && input_frame == 30)
+    if (port != 0 || device != RETRO_DEVICE_JOYPAD)
+        return 0;
+    press = smoke_press_frame();
+    hold = smoke_hold_frames();
+    if (id == smoke_button_id() &&
+        input_frame >= press && input_frame < press + hold) {
+        static unsigned last_logged = 0xFFFFFFFFu;
+        if (input_frame != last_logged) {
+            fprintf(stderr, "[SMOKE-INPUT] frame=%u segurando botao id=%u\n",
+                    input_frame, id);
+            last_logged = input_frame;
+        }
         return 1;
+    }
     return 0;
 }
 
