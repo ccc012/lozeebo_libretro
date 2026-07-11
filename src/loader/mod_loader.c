@@ -108,6 +108,14 @@ static void zmod_try_probe_packaged_assets(const char *path) {
          tolower((unsigned char)dot[3]) == 'r' && dot[4] == '\0')) {
         strcpy((char *)dot, ".bar");
         zbar_probe(candidate);
+        strcpy((char *)dot, ".sig");
+        {
+            FILE *sig = fopen(candidate, "rb");
+            if (sig) {
+                LOGI("mod: assinatura companheira presente '%s'", candidate);
+                fclose(sig);
+            }
+        }
     }
 }
 
