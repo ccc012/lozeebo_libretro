@@ -203,6 +203,11 @@ static uint32_t g_stub_vtbl = 0;
 #define ZCLSID_DEVICE_BITMAP 0x4449424Du /* 'DIBM', marcador HLE interno */
 #define ZHID_HANDLE       0x00001234u
 #define ZHID_JOYSTICK_UID 0x0106C3FDu
+/* Limite superior de qualquer endereco emulado "real" (RAM/heap/stack/VRAM);
+ * acima disso so existem traps HLE (0xF0000000+) ou lixo/ponteiro invalido.
+ * NAO usar 0x04000000 aqui: heap comeca em 0x10000000 e stack em 0x2FC00000,
+ * ambos endereços legitimos e muito usados. */
+#define ZDISPLAY_ADDR_MAX (ZMEM_VRAM_BASE + ZMEM_VRAM_SIZE)
 static uint32_t g_device_bitmap = 0;
 
 /* Estado mínimo do IDisplay real (layout de 48 slots do SDK Zeebo). */
@@ -254,9 +259,215 @@ static bool display_clip_rect(int *x, int *y, int *w, int *h) {
     return true;
 }
 
+/* Destino ativo de desenho: 0 = dispositivo (VRAM); senao, objeto DIB
+ * offscreen criado por IDisplay_CreateDIBitmap (layout ZCLSID_DEVICE_BITMAP:
+ * +8 endereco dos pixels XRGB8888, +20 largura, +22 altura, +24 passo em
+ * bytes, +28 profundidade). Espelha IDISPLAY_SetDestination/BitBlt reais. */
+static uint32_t g_display_dest_obj = 0;
+
+static void display_fill_rect_xrgb(int x, int y, int w, int h, uint32_t xrgb) {
+    if (g_display_dest_obj == 0) {
+        if (display_clip_rect(&x, &y, &w, &h))
+            zfb_fill_rect(x, y, w, h, xrgb);
+        return;
+    }
+    {
+        uint32_t bits = zmem_read32(g_display_dest_obj + 8);
+        int dw = (int)zmem_read16(g_display_dest_obj + 20);
+        int dh = (int)zmem_read16(g_display_dest_obj + 22);
+        int pitch = (int)zmem_read16(g_display_dest_obj + 24);
+        int xx, yy;
+        if (!bits) return;
+        for (yy = y; yy < y + h; yy++) {
+            if (yy < 0 || yy >= dh) continue;
+            for (xx = x; xx < x + w; xx++) {
+                if (xx < 0 || xx >= dw) continue;
+                zmem_write32(bits + (uint32_t)yy * (uint32_t)pitch + (uint32_t)xx * 4u, xrgb);
+            }
+        }
+    }
+}
+
 static void display_fill_rect(int x, int y, int w, int h, uint32_t rgb) {
-    if (display_clip_rect(&x, &y, &w, &h))
-        zfb_fill_rect(x, y, w, h, display_rgbval_to_xrgb(rgb));
+    display_fill_rect_xrgb(x, y, w, h, display_rgbval_to_xrgb(rgb));
+}
+
+/* ---- Texto: fonte 5x7 embutida (aproximacao do glcdfont classico) e
+ * resolucao de ponteiro de texto (AECHAR UTF-16LE, byte ASCII, ou um nivel
+ * de indirecao via descritor - padrao usado por alguns SDKs BREW/Zeebo,
+ * confirmado no zeemu como resolve_display_text_descriptor). ---- */
+static const uint8_t ZFONT5X7[91][5] = {
+    {0x00,0x00,0x00,0x00,0x00}, /* ' ' */
+    {0x00,0x00,0x5F,0x00,0x00}, /* ! */
+    {0x00,0x07,0x00,0x07,0x00}, /* " */
+    {0x14,0x7F,0x14,0x7F,0x14}, /* # */
+    {0x24,0x2A,0x7F,0x2A,0x12}, /* $ */
+    {0x23,0x13,0x08,0x64,0x62}, /* % */
+    {0x36,0x49,0x55,0x22,0x50}, /* & */
+    {0x00,0x05,0x03,0x00,0x00}, /* ' */
+    {0x00,0x1C,0x22,0x41,0x00}, /* ( */
+    {0x00,0x41,0x22,0x1C,0x00}, /* ) */
+    {0x14,0x08,0x3E,0x08,0x14}, /* * */
+    {0x08,0x08,0x3E,0x08,0x08}, /* + */
+    {0x00,0x50,0x30,0x00,0x00}, /* , */
+    {0x08,0x08,0x08,0x08,0x08}, /* - */
+    {0x00,0x60,0x60,0x00,0x00}, /* . */
+    {0x20,0x10,0x08,0x04,0x02}, /* / */
+    {0x3E,0x51,0x49,0x45,0x3E}, /* 0 */
+    {0x00,0x42,0x7F,0x40,0x00}, /* 1 */
+    {0x42,0x61,0x51,0x49,0x46}, /* 2 */
+    {0x21,0x41,0x45,0x4B,0x31}, /* 3 */
+    {0x18,0x14,0x12,0x7F,0x10}, /* 4 */
+    {0x27,0x45,0x45,0x45,0x39}, /* 5 */
+    {0x3C,0x4A,0x49,0x49,0x30}, /* 6 */
+    {0x01,0x71,0x09,0x05,0x03}, /* 7 */
+    {0x36,0x49,0x49,0x49,0x36}, /* 8 */
+    {0x06,0x49,0x49,0x29,0x1E}, /* 9 */
+    {0x00,0x36,0x36,0x00,0x00}, /* : */
+    {0x00,0x56,0x36,0x00,0x00}, /* ; */
+    {0x08,0x14,0x22,0x41,0x00}, /* < */
+    {0x14,0x14,0x14,0x14,0x14}, /* = */
+    {0x00,0x41,0x22,0x14,0x08}, /* > */
+    {0x02,0x01,0x51,0x09,0x06}, /* ? */
+    {0x32,0x49,0x79,0x41,0x3E}, /* @ */
+    {0x7E,0x11,0x11,0x11,0x7E}, /* A */
+    {0x7F,0x49,0x49,0x49,0x36}, /* B */
+    {0x3E,0x41,0x41,0x41,0x22}, /* C */
+    {0x7F,0x41,0x41,0x22,0x1C}, /* D */
+    {0x7F,0x49,0x49,0x49,0x41}, /* E */
+    {0x7F,0x09,0x09,0x09,0x01}, /* F */
+    {0x3E,0x41,0x49,0x49,0x7A}, /* G */
+    {0x7F,0x08,0x08,0x08,0x7F}, /* H */
+    {0x00,0x41,0x7F,0x41,0x00}, /* I */
+    {0x20,0x40,0x41,0x3F,0x01}, /* J */
+    {0x7F,0x08,0x14,0x22,0x41}, /* K */
+    {0x7F,0x40,0x40,0x40,0x40}, /* L */
+    {0x7F,0x02,0x0C,0x02,0x7F}, /* M */
+    {0x7F,0x04,0x08,0x10,0x7F}, /* N */
+    {0x3E,0x41,0x41,0x41,0x3E}, /* O */
+    {0x7F,0x09,0x09,0x09,0x06}, /* P */
+    {0x3E,0x41,0x51,0x21,0x5E}, /* Q */
+    {0x7F,0x09,0x19,0x29,0x46}, /* R */
+    {0x46,0x49,0x49,0x49,0x31}, /* S */
+    {0x01,0x01,0x7F,0x01,0x01}, /* T */
+    {0x3F,0x40,0x40,0x40,0x3F}, /* U */
+    {0x1F,0x20,0x40,0x20,0x1F}, /* V */
+    {0x3F,0x40,0x38,0x40,0x3F}, /* W */
+    {0x63,0x14,0x08,0x14,0x63}, /* X */
+    {0x07,0x08,0x70,0x08,0x07}, /* Y */
+    {0x61,0x51,0x49,0x45,0x43}, /* Z */
+};
+#define ZFONT5X7_FIRST 0x20
+#define ZFONT5X7_LAST  0x5A
+
+static bool display_looks_ascii(uint32_t p) {
+    int printable = 0, total = 0, i;
+    if (!p || p >= ZDISPLAY_ADDR_MAX) return false;
+    for (i = 0; i < 16; i++) {
+        uint8_t c = zmem_read8(p + (uint32_t)i);
+        if (!c) break;
+        total++;
+        if ((c >= 0x20 && c <= 0x7E) || c == '\n' || c == '\r' || c == '\t')
+            printable++;
+    }
+    return total >= 2 && printable == total;
+}
+
+/* Um nivel de indirecao: alguns jogos passam um "descritor" cujo +0 e um
+ * objeto e +8 desse objeto e o char* real (visto no zeemu como padrao
+ * recorrente de SDKs BREW customizados). */
+static uint32_t display_resolve_text_ptr(uint32_t pch, bool *force_byte) {
+    uint32_t object, text;
+    *force_byte = false;
+    if (!pch || pch >= ZDISPLAY_ADDR_MAX) return pch;
+    object = zmem_read32(pch);
+    if (!object || object >= ZDISPLAY_ADDR_MAX) return pch;
+    text = zmem_read32(object + 8);
+    if (display_looks_ascii(text)) {
+        *force_byte = true;
+        return text;
+    }
+    return pch;
+}
+
+static int display_read_text(uint32_t pch, int n_chars, bool force_byte,
+                              char *out, int out_cap) {
+    int limit = n_chars, i, n = 0;
+    if (limit < 0 || limit > 4096) limit = 4096;
+    if (!pch || pch >= ZDISPLAY_ADDR_MAX) { out[0] = '\0'; return 0; }
+    for (i = 0; i < limit && n < out_cap - 1; i++) {
+        uint32_t c = force_byte ? zmem_read8(pch + (uint32_t)i)
+                                 : zmem_read16(pch + (uint32_t)i * 2u);
+        if (!c) break;
+        out[n++] = (c == '\n' || c == '\r' || c == '\t' || (c >= 0x20 && c < 0x7F))
+                       ? (char)c : '?';
+    }
+    out[n] = '\0';
+    return n;
+}
+
+/* Resolve o texto tentando AECHAR (UTF-16LE) e byte (ASCII/OEM), preferindo
+ * a interpretacao mais "imprimivel" - mesma heuristica do zeemu. */
+static int display_resolve_string(uint32_t pch, int n_chars, char *out, int out_cap) {
+    bool force_byte = false;
+    uint32_t resolved = display_resolve_text_ptr(pch, &force_byte);
+    if (force_byte)
+        return display_read_text(resolved, n_chars, true, out, out_cap);
+    {
+        char ae_buf[160], byte_buf[160];
+        int ae_n = display_read_text(resolved, n_chars, false, ae_buf, sizeof(ae_buf));
+        int byte_n = display_read_text(resolved, n_chars, true, byte_buf, sizeof(byte_buf));
+        int ae_score = 0, byte_score = 0, i;
+        for (i = 0; i < ae_n; i++) if (ae_buf[i] != '?') ae_score++;
+        for (i = 0; i < byte_n; i++) if (byte_buf[i] != '?') byte_score++;
+        if (byte_n > 0 && byte_score > ae_score + 2 && byte_n > ae_n) {
+            int cp = byte_n < out_cap - 1 ? byte_n : out_cap - 1;
+            memcpy(out, byte_buf, (size_t)cp);
+            out[cp] = '\0';
+            return cp;
+        }
+        {
+            int cp = ae_n < out_cap - 1 ? ae_n : out_cap - 1;
+            memcpy(out, ae_buf, (size_t)cp);
+            out[cp] = '\0';
+            return cp;
+        }
+    }
+}
+
+static void display_draw_char(int x, int y, char ch, uint32_t xrgb) {
+    uint8_t c = (uint8_t)ch;
+    int col, row;
+    const uint8_t *glyph;
+    if (c >= 'a' && c <= 'z') c = (uint8_t)(c & 0xDFu); /* aproxima minusculas com maiusculas */
+    if (c < ZFONT5X7_FIRST || c > ZFONT5X7_LAST) c = '?';
+    glyph = ZFONT5X7[c - ZFONT5X7_FIRST];
+    for (col = 0; col < 5; col++) {
+        uint8_t bits = glyph[col];
+        for (row = 0; row < 7; row++) {
+            if (bits & (uint8_t)(1u << row))
+                display_fill_rect_xrgb(x + col, y + row, 1, 1, xrgb);
+        }
+    }
+}
+
+/* Desenha a string e devolve a largura total em pixels (5px + 1px de gap
+ * por caractere), usada tambem por MeasureTextEx. */
+static int display_draw_text(int x, int y, const char *s, uint32_t xrgb, bool actually_draw) {
+    int cx = x, max_w = 0;
+    for (; *s; s++) {
+        if (*s == '\n') {
+            if (cx - x > max_w) max_w = cx - x;
+            y += 8;
+            cx = x;
+            continue;
+        }
+        if (actually_draw)
+            display_draw_char(cx, y, *s, xrgb);
+        cx += 6;
+    }
+    if (cx - x > max_w) max_w = cx - x;
+    return max_w;
 }
 
 /* NOTA: nao rotear AEECLSID_DISPLAY_REAL para uma vtable propria com os
@@ -289,6 +500,47 @@ static uint32_t make_stub_interface(uint32_t clsid) {
          obj, vtbl_read, vtbl0, clsid);
     zmem_write32(obj + 4, clsid);
     return obj;
+}
+
+/* Cria um bitmap offscreen (IDIB) real: objeto no layout ZCLSID_DEVICE_BITMAP
+ * (mesmo usado por GetDeviceBitmap) com pixels XRGB8888 alocados no heap -
+ * usado por IDisplay_CreateDIBitmap/CreateDIBitmapEx. */
+static uint32_t display_create_dib(int width, int height) {
+    uint32_t obj, bits;
+    uint32_t pitch;
+    if (width <= 0 || height <= 0 || width > 2048 || height > 2048)
+        return 0;
+    obj = make_stub_interface(ZCLSID_DEVICE_BITMAP);
+    if (!obj) return 0;
+    pitch = (uint32_t)width * 4u;
+    bits = zheap_alloc(pitch * (uint32_t)height);
+    if (!bits) return 0;
+    zmem_write32(obj + 8, bits);
+    zmem_write16(obj + 20, (uint16_t)width);
+    zmem_write16(obj + 22, (uint16_t)height);
+    zmem_write16(obj + 24, (uint16_t)pitch);
+    zmem_write8(obj + 28, 32);
+    zmem_write8(obj + 29, 32);
+    return obj;
+}
+
+/* Algumas ROMs Zeebo usam um thunk de vtable que empurra copias extras de
+ * R0/R1/R2 na pilha antes dos argumentos reais (confirmado no zeemu como
+ * display_arg_stack_base) - detecta e pula essas copias. */
+static uint32_t display_find_arg_base(void) {
+    uint32_t sp = g_cpu.r[REG_SP];
+    uint32_t r0 = g_cpu.r[0], r1 = g_cpu.r[1], r2 = g_cpu.r[2];
+    int depth;
+    if (sp == 0 || sp >= ZDISPLAY_ADDR_MAX) return sp;
+    for (depth = 0; depth < 4; depth++) {
+        if (zmem_read32(sp + 0) != r0 || zmem_read32(sp + 4) != r1 ||
+            zmem_read32(sp + 8) != r2)
+            break;
+        sp += 20;
+    }
+    if (zmem_read32(sp + 12) == r0)
+        sp += 20;
+    return sp;
 }
 
 static bool is_known_applet(uint32_t clsid) {
@@ -918,18 +1170,20 @@ void zbrew_handle_stub(uint32_t id) {
         break;
     case 3:
         if (clsid == AEECLSID_DISPLAY_REAL) {
-            /* MeasureTextEx(po, font, AECHAR* psz, int nl, ...) -> R0=largura.
-             * Aproximacao 8px/char ate a fonte real existir. */
+            /* MeasureTextEx(po, font, AECHAR* psz, int nl, nMaxWidth, pnFits)
+             * -> R0=largura em pixels, usa a mesma resolucao de texto (AECHAR/
+             * byte/descritor) e a fonte 5x7 usadas por DrawText, para que a
+             * largura reportada bata com o que sera desenhado de verdade. */
+            uint32_t base = display_find_arg_base();
             uint32_t psz = g_cpu.r[2];
             int32_t nl = (int32_t)g_cpu.r[3];
-            uint32_t chars = 0;
-            if (nl > 0) {
-                chars = (uint32_t)nl;
-            } else if (psz) {
-                while (chars < 256 && zmem_read16(psz + chars * 2))
-                    chars++;
-            }
-            g_cpu.r[0] = chars * 8;
+            uint32_t pn_fits = zmem_read32(base + 4);
+            char text[160];
+            int len = display_resolve_string(psz, nl, text, sizeof(text));
+            int width = len > 0 ? display_draw_text(0, 0, text, 0, false) : 16;
+            if (pn_fits && pn_fits < ZDISPLAY_ADDR_MAX)
+                zmem_write32(pn_fits, (uint32_t)len);
+            g_cpu.r[0] = (uint32_t)width;
             break;
         }
         if (clsid == AEECLSID_SIGNALCBFACT_R) {
@@ -962,6 +1216,37 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 0;
         break;
     case 4:
+        if (clsid == AEECLSID_DISPLAY_REAL) { /* DrawText */
+            /* IDISPLAY_DrawText(po, font, psz, nl, x, y, prcBackground, dwFlags):
+             * R0=po R1=font R2=psz R3=nl; x/y/prcb/flags na pilha (com possivel
+             * ajuste de base para thunks que duplicam this/args - ver
+             * display_find_arg_base). */
+            uint32_t base = display_find_arg_base();
+            uint32_t psz = g_cpu.r[2];
+            int32_t nl = (int32_t)g_cpu.r[3];
+            int x = (int32_t)zmem_read32(base + 0);
+            int y = (int32_t)zmem_read32(base + 4);
+            uint32_t prc = zmem_read32(base + 8);
+            char text[160];
+            int len;
+            static uint32_t draw_text_logs = 0;
+
+            if (prc && prc < ZDISPLAY_ADDR_MAX &&
+                (x < -1024 || x > 4096 || y < -1024 || y > 4096)) {
+                x = (int16_t)zmem_read16(prc + 0);
+                y = (int16_t)zmem_read16(prc + 2);
+            }
+            len = display_resolve_string(psz, nl, text, sizeof(text));
+            if (len > 0)
+                display_draw_text(x, y, text, display_rgbval_to_xrgb(g_display_text_color), true);
+            if (draw_text_logs < 32) {
+                LOGI("IDisplay_DrawText: '%s' em (%d,%d) len=%d", text, x, y, len);
+                draw_text_logs++;
+            }
+            zbrew_mark_frame();
+            g_cpu.r[0] = 0;
+            break;
+        }
         if (clsid == AEECLSID_HID_REAL) { /* IHID_GetDeviceInfo */
             uint32_t info = g_cpu.r[2];
             if (g_cpu.r[1] != ZHID_HANDLE || !info) {
@@ -1049,6 +1334,58 @@ void zbrew_handle_stub(uint32_t id) {
             g_cpu.r[0] = 0;
         }
         break;
+    case 6:
+        if (clsid == AEECLSID_DISPLAY_REAL) { /* BitBlt */
+            /* IDISPLAY_BitBlt(po, xDest, yDest, cxDest, cyDest, pSrc, xSrc,
+             * ySrc, rop): R1=xDest R2=yDest R3=cxDest; cyDest/pSrc/xSrc/ySrc/
+             * rop na pilha. pSrc precisa ser um bitmap ZCLSID_DEVICE_BITMAP
+             * (device ou criado por CreateDIBitmap) - o unico formato que
+             * este HLE sabe ler pixels de. */
+            uint32_t base = display_find_arg_base();
+            int x_dest = (int32_t)g_cpu.r[1];
+            int y_dest = (int32_t)g_cpu.r[2];
+            int cx_dest = (int32_t)g_cpu.r[3];
+            int cy_dest = (int32_t)zmem_read32(base + 0);
+            uint32_t src_ptr = zmem_read32(base + 4);
+            int x_src = (int32_t)zmem_read32(base + 8);
+            int y_src = (int32_t)zmem_read32(base + 12);
+            uint32_t rop = zmem_read32(base + 16);
+            uint32_t src_clsid = src_ptr ? zmem_read32(src_ptr + 4) : 0;
+            static uint32_t bitblt_logs = 0;
+
+            if (src_clsid == ZCLSID_DEVICE_BITMAP && cx_dest > 0 && cy_dest > 0) {
+                uint32_t bits = zmem_read32(src_ptr + 8);
+                int sw = (int)zmem_read16(src_ptr + 20);
+                int sh = (int)zmem_read16(src_ptr + 22);
+                int spitch = (int)zmem_read16(src_ptr + 24);
+                int xx, yy;
+                for (yy = 0; yy < cy_dest; yy++) {
+                    int sy = y_src + yy;
+                    if (sy < 0 || sy >= sh) continue;
+                    for (xx = 0; xx < cx_dest; xx++) {
+                        int sx = x_src + xx;
+                        uint32_t px;
+                        if (sx < 0 || sx >= sw) continue;
+                        px = zmem_read32(bits + (uint32_t)sy * (uint32_t)spitch + (uint32_t)sx * 4u);
+                        if (rop == 7u /* AEE_RO_TRANSPARENT */ && px == 0xFF000000u)
+                            continue; /* preto puro tratado como transparente */
+                        display_fill_rect_xrgb(x_dest + xx, y_dest + yy, 1, 1, px);
+                    }
+                }
+                zbrew_mark_frame();
+                g_cpu.r[0] = 0;
+            } else {
+                if (bitblt_logs < 8) {
+                    LOGW("IDisplay_BitBlt: fonte nao suportada src=0x%08X clsid=0x%08X",
+                         src_ptr, src_clsid);
+                    bitblt_logs++;
+                }
+                g_cpu.r[0] = 0;
+            }
+            break;
+        }
+        g_cpu.r[0] = 0;
+        break;
     case 7:
         if (clsid == AEECLSID_DISPLAY_REAL) { /* Update */
             zbrew_mark_frame();
@@ -1128,11 +1465,46 @@ void zbrew_handle_stub(uint32_t id) {
         }
         g_cpu.r[0] = 0;
         break;
+    case 13:
+        if (clsid == AEECLSID_DISPLAY_REAL) { /* CreateDIBitmap(po, ppIDIB, depth, width, height) */
+            uint32_t base = display_find_arg_base();
+            uint32_t pp_idib = g_cpu.r[1];
+            int width = (int)(g_cpu.r[3] & 0xFFFFu);
+            int height = (int)(zmem_read32(base + 0) & 0xFFFFu);
+            uint32_t dib = display_create_dib(width, height);
+            if (pp_idib && pp_idib < ZDISPLAY_ADDR_MAX) zmem_write32(pp_idib, dib);
+            LOGI("IDisplay_CreateDIBitmap: %dx%d -> 0x%08X", width, height, dib);
+            g_cpu.r[0] = dib ? 0 : 8; /* SUCCESS / EUNSUPPORTED */
+            break;
+        }
+        g_cpu.r[0] = 0;
+        break;
     case 14:
         if (clsid == ZCLSID_HID_DEVICE) {
             g_hid_position_signal = g_cpu.r[1];
             LOGI("IHIDDevice_RegisterForPositionChange signal=0x%08X",
                  g_hid_position_signal);
+            g_cpu.r[0] = 0;
+            break;
+        }
+        if (clsid == AEECLSID_DISPLAY_REAL) { /* SetDestination(po, pIDIB) */
+            uint32_t dest = g_cpu.r[1];
+            uint32_t dest_clsid = dest ? zmem_read32(dest + 4) : 0;
+            if (!dest) {
+                g_display_dest_obj = 0; /* volta para o dispositivo (VRAM) */
+            } else if (dest_clsid == ZCLSID_DEVICE_BITMAP) {
+                g_display_dest_obj = dest;
+            }
+            LOGI("IDisplay_SetDestination: dest=0x%08X ativo=0x%08X", dest, g_display_dest_obj);
+            g_cpu.r[0] = 0;
+            break;
+        }
+        g_cpu.r[0] = 0;
+        break;
+    case 15:
+        if (clsid == AEECLSID_DISPLAY_REAL) { /* GetDestination */
+            g_cpu.r[0] = g_display_dest_obj ? g_display_dest_obj : g_device_bitmap;
+            break;
         }
         g_cpu.r[0] = 0;
         break;
@@ -1144,9 +1516,9 @@ void zbrew_handle_stub(uint32_t id) {
                     zmem_write32(g_device_bitmap + 8, ZMEM_VRAM_BASE);
                     zmem_write16(g_device_bitmap + 20, 640);
                     zmem_write16(g_device_bitmap + 22, 480);
-                    zmem_write16(g_device_bitmap + 24, 640 * 2);
-                    zmem_write8(g_device_bitmap + 28, 16);
-                    zmem_write8(g_device_bitmap + 29, 16);
+                    zmem_write16(g_device_bitmap + 24, 640 * 4);
+                    zmem_write8(g_device_bitmap + 28, 32);
+                    zmem_write8(g_device_bitmap + 29, 32);
                 }
             }
             if (g_cpu.r[1]) zmem_write32(g_cpu.r[1], g_device_bitmap);
