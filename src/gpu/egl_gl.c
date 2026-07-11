@@ -728,6 +728,11 @@ static void draw_prim(uint32_t mode, int count,
         int vi = index_of ? index_of(i, idx_addr, idx_type) : i;
         if (!transform_vertex(vi, &cur))
             return;
+        static uint32_t vtx_dbg = 0;
+        if (vtx_dbg < 8) {
+            LOGI("v[%d]: screen=(%.1f,%.1f) uv=(%.2f,%.2f)", i, cur.sx, cur.sy, cur.u, cur.v);
+            vtx_dbg++;
+        }
         if (mode == 0x0004u) { /* GL_TRIANGLES */
             if (i % 3 == 0) { first = cur; have_first = true; }
             else if (i % 3 == 1) { prev = cur; have_prev = true; }
@@ -1021,15 +1026,6 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         g_va_pos.stride = (int)a2;
         /* Convencao Qualcomm: pointer pode estar em R3 ou stack[0]. Se R3==SP, real ptr=sp[0] */
         uint32_t ptr = decode_vertex_ptr(a3);
-        static uint32_t vp_cnt = 0;
-        if (vp_cnt < 10) {
-            uint32_t sp0 = zbrew_stack_arg(0);
-            uint32_t decoded = decode_vertex_ptr(a3);
-            LOGI("VP[%u] a3=0x%X -> decoded=0x%X (sp[0]=0x%X) data@decoded={%08X %08X %08X %08X}", vp_cnt,
-                 a3, decoded, sp0,
-                 zmem_read32(decoded), zmem_read32(decoded + 4), zmem_read32(decoded + 8), zmem_read32(decoded + 12));
-            vp_cnt++;
-        }
         g_va_pos.addr = ptr;
         {
             bool valid = (a3 < 0x04000000u);

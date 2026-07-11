@@ -213,6 +213,7 @@ static uint32_t make_stub_interface(uint32_t clsid) {
              zmem_read32(g_stub_vtbl), ZTRAP_ADDR(ZT_STUB_BASE));
     }
     if (!obj) return 0;
+    memset((void *)zmem_host_ptr(obj, 64), 0, 64);
     zmem_write32(obj, g_stub_vtbl);
     uint32_t vtbl_read = zmem_read32(obj);
     uint32_t vtbl0 = zmem_read32(vtbl_read);
@@ -902,6 +903,14 @@ void zbrew_handle_stub(uint32_t id) {
             }
             if (g_cpu.r[2]) zmem_write32(g_cpu.r[2], obj1);
             if (g_cpu.r[3]) zmem_write32(g_cpu.r[3], obj2);
+            if (obj1) {
+                zmem_write32(obj1 + 8, g_shell_obj);
+                zmem_write32(obj1 + 12, g_module_obj);
+            }
+            if (obj2) {
+                zmem_write32(obj2 + 8, g_shell_obj);
+                zmem_write32(obj2 + 12, g_module_obj);
+            }
             LOGI("CreateInstance case 5 (0x0100101C) OK -> obj1=0x%08X obj2=0x%08X",
                  obj1, obj2);
             g_cpu.r[0] = 0;
