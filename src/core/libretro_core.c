@@ -51,6 +51,9 @@ static uint32_t g_cheat_addr[32];
 static uint8_t g_cheat_val[32];
 static bool g_cheat_enabled[32];
 static unsigned g_cheat_count = 0;
+static bool g_game_from_archive = false;
+static char g_archive_path[512];
+static char g_archive_file[256];
 
 static struct retro_core_option_v2_category g_option_categories[] = {
     { "video", "Video", "Video and framebuffer presentation options." },
@@ -301,10 +304,39 @@ static bool load_game_from_path(const char *path, void **out_data, size_t *out_s
     return true;
 }
 
+static void make_asset_path_from_content(const struct retro_game_info *info,
+                                         char *out, size_t out_len) {
+    if (!out || out_len == 0) return;
+    out[0] = '\0';
+
+    if (g_game_from_archive && g_archive_path[0] && g_archive_file[0]) {
+        const char *sep1 = strrchr(g_archive_path, '/');
+        const char *sep2 = strrchr(g_archive_path, '\\');
+        const char *sep = sep1 > sep2 ? sep1 : sep2;
+        size_t dir_len = sep ? (size_t)(sep - g_archive_path) : 0;
+        if (dir_len + 1 + strlen(g_archive_file) + 1 < out_len) {
+            memcpy(out, g_archive_path, dir_len);
+            out[dir_len] = '\0';
+            if (dir_len > 0)
+                snprintf(out + dir_len, out_len - dir_len, "%c%s",
+                         sep && sep[0] == '/' ? '/' : '\\', g_archive_file);
+            else
+                snprintf(out, out_len, "%s", g_archive_file);
+            return;
+        }
+    }
+
+    if (info->path && info->path[0]) {
+        snprintf(out, out_len, "%s", info->path);
+    }
+}
+
 bool retro_load_game(const struct retro_game_info *info) {
     enum retro_pixel_format fmt = RETRO_PIXEL_FORMAT_XRGB8888;
     void *loaded_data = NULL;
     size_t loaded_size = 0;
+    const struct retro_game_info_ext *ext_info = NULL;
+    char asset_path[512];
 
     if (!info) {
         LOGE("retro_load_game: sem info de conteudo");
@@ -317,6 +349,15 @@ bool retro_load_game(const struct retro_game_info *info) {
     if (!environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt)) {
         LOGE("retro_load_game: frontend nao suporta XRGB8888");
         return false;
+    }
+    g_game_from_archive = false;
+    g_archive_path[0] = '\0';
+    g_archive_file[0] = '\0';
+    if (environ_cb(RETRO_ENVIRONMENT_GET_GAME_INFO_EXT, &ext_info) && ext_info &&
+        ext_info->file_in_archive && ext_info->archive_path && ext_info->archive_file) {
+        g_game_from_archive = true;
+        snprintf(g_archive_path, sizeof(g_archive_path), "%s", ext_info->archive_path);
+        snprintf(g_archive_file, sizeof(g_archive_file), "%s", ext_info->archive_file);
     }
 
     if (info->data && info->size) {
@@ -336,8 +377,7 @@ bool retro_load_game(const struct retro_game_info *info) {
     g_game_data = loaded_data;
     g_game_size = loaded_size;
     g_game_path[0] = '\0';
-    if (info->path)
-        snprintf(g_game_path, sizeof(g_game_path), "%s", info->path);
+    make_asset_path_from_content(info, g_game_path, sizeof(g_game_path));
     LOGI("retro_load_game: caminho='%s' tamanho=%zu",
          g_game_path[0] ? g_game_path : "(memoria)", g_game_size);
     LOGI("retro_load_game: username='%s' overscan=%s", g_username, g_crop_overscan ? "enabled" : "disabled");
@@ -348,8 +388,9 @@ bool retro_load_game(const struct retro_game_info *info) {
     zbrew_reset();
     zbrew_init();
 
+    make_asset_path_from_content(info, asset_path, sizeof(asset_path));
     if (!zmod_load(g_game_data, g_game_size,
-                   g_game_path[0] ? g_game_path : NULL, &g_mod_info)) {
+                   asset_path[0] ? asset_path : NULL, &g_mod_info)) {
         LOGE("retro_load_game: falha no loader");
         free(g_game_data);
         g_game_data = NULL;
@@ -367,6 +408,9 @@ bool retro_load_game(const struct retro_game_info *info) {
 void retro_unload_game(void) {
     LOGI("retro_unload_game");
     g_game_loaded = false;
+    g_game_from_archive = false;
+    g_archive_path[0] = '\0';
+    g_archive_file[0] = '\0';
     zaudio_stop_all();
 }
 
@@ -418,12 +462,12 @@ void retro_run(void) {
     sync_runtime_options();
 
     if (g_game_loaded) {
-        /* timers do IShell podem "acordar" a CPU com um guest call */
+        zbrew_tick_ms(16);
         zboot_tick(16);
+        zboot_process_timers();
         if (!g_cpu.halted)
             zcpu_run(ZEEBO_INSTR_PER_FRAME);
         apply_cheats();
-        zbrew_tick_ms(16);
     }
 
     /* Diagnostico: estado da CPU a cada 60 frames (1s) */
