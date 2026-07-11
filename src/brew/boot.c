@@ -51,6 +51,23 @@ static bool g_hid_event_pending = false;
 static uint32_t g_shell_prefs[8];
 static uint32_t g_shell_events[8];
 
+/* IHID_RegisterForConnectEvents (slot 6 do IHID real, ver BrewHID.cpp do
+ * zeemu): o jogo registra um sinal e espera ser avisado quando um device
+ * HID conecta. Nosso stub ja reporta o joystick como conectado desde o
+ * IHID_GetConnectedDevices inicial, entao disparamos esse sinal uma unica
+ * vez, no primeiro tick apos o registro (ver zboot_process_timers). Sem
+ * isso o Family Pack fica parado para sempre esperando esse callback. */
+static uint32_t g_hid_connect_signal = 0;
+static bool g_hid_connect_pending = false;
+/* Watchdog: alguns jogos (Double Dragon confirmado por smoke test) entram
+ * num loop degenerado dentro do callback de conexao HID e nunca retornam
+ * (nunca disparam ZT_GUEST_RETURN) - sem isso a CPU queima o orcamento de
+ * 1M instrucoes/frame para sempre, travando o framebuffer que ja avancava
+ * bem so com timers. Se o callback nao voltar depois de um numero razoavel
+ * de instrucoes, forca o estado de volta para RUNNING/halted. */
+#define ZSIGNAL_CALL_INSTR_BUDGET (2u * 1000u * 1000u)
+static uint64_t g_signal_call_started_at = 0;
+
 uint32_t zboot_get_applet_object(void) {
     if (g_applet_obj)
         return g_applet_obj;
@@ -117,6 +134,8 @@ typedef struct {
     uint32_t shell_prefs[8];
     uint32_t shell_events[8];
     uint32_t timers[ZTIMER_MAX * 4];
+    uint32_t hid_connect_signal;
+    uint32_t hid_connect_pending;
 } zboot_state_blob_t;
 
 size_t zboot_serialize(void *dst, size_t max) {
@@ -148,6 +167,8 @@ size_t zboot_serialize(void *dst, size_t max) {
         blob.timers[i * 4 + 2] = g_timers[i].pfn;
         blob.timers[i * 4 + 3] = g_timers[i].puser;
     }
+    blob.hid_connect_signal = g_hid_connect_signal;
+    blob.hid_connect_pending = g_hid_connect_pending ? 1u : 0u;
     memcpy(dst, &blob, sizeof(blob));
     return need;
 }
@@ -178,6 +199,8 @@ bool zboot_unserialize(const void *src, size_t len) {
         g_timers[i].pfn = blob->timers[i * 4 + 2];
         g_timers[i].puser = blob->timers[i * 4 + 3];
     }
+    g_hid_connect_signal = blob->hid_connect_signal;
+    g_hid_connect_pending = blob->hid_connect_pending ? true : false;
     return true;
 }
 
@@ -378,6 +401,8 @@ void zboot_start(uint32_t entry, uint32_t applet_clsid) {
     g_hid_button_signal = 0;
     g_hid_position_signal = 0;
     g_hid_event_pending = false;
+    g_hid_connect_signal = 0;
+    g_hid_connect_pending = false;
     memset(g_shell_prefs, 0, sizeof(g_shell_prefs));
     memset(g_shell_events, 0, sizeof(g_shell_events));
     g_applet_clsid = applet_clsid;
@@ -494,8 +519,36 @@ void zboot_process_timers(void) {
     int i;
     uint32_t now = zbrew_uptime_ms();
 
+    /* Watchdog do callback de sinal (ver comentario em g_signal_call_started_at):
+     * roda mesmo com o jogo tecnicamente "parado" nesse estado, porque a CPU
+     * pode estar halted=false rodando o callback ha varios frames. */
+    if (g_state == BOOT_SIGNAL_CALL &&
+        g_cpu.executed - g_signal_call_started_at > ZSIGNAL_CALL_INSTR_BUDGET) {
+        LOGW("boot: callback de sinal nao retornou apos %llu instrucoes - "
+             "forcando volta para RUNNING (provavel loop degenerado no guest)",
+             (unsigned long long)(g_cpu.executed - g_signal_call_started_at));
+        g_state = BOOT_RUNNING;
+        g_cpu.halted = true;
+    }
+
     if (g_state != BOOT_RUNNING)
         return;
+
+    /* Sinal de conexao de HID (IHID_RegisterForConnectEvents, case 6):
+     * dispara uma unica vez, como um timer de disparo imediato. Sem isso
+     * jogos que esperam esse callback antes de iniciar o loop de jogo
+     * (ex: Family Pack) ficam parados para sempre depois do boot. */
+    if (g_hid_connect_pending) {
+        uint32_t cb = zmem_read32(g_hid_connect_signal + 8);
+        uint32_t user = zmem_read32(g_hid_connect_signal + 12);
+        LOGI("boot: sinal de conexao HID disparado, callback=0x%08X user=0x%08X",
+             cb, user);
+        g_hid_connect_pending = false;
+        g_state = BOOT_SIGNAL_CALL;
+        g_signal_call_started_at = g_cpu.executed;
+        guest_call(cb, user, 0, 0, 0);
+        return;
+    }
 
     for (i = 0; i < ZTIMER_MAX; i++) {
         if (!g_timers[i].active)
@@ -1048,6 +1101,17 @@ void zbrew_handle_stub(uint32_t id) {
                  clsid);
             g_cpu.r[0] = 0;
         }
+        break;
+    case 6:
+        if (clsid == AEECLSID_HID_REAL) { /* IHID_RegisterForConnectEvents */
+            g_hid_connect_signal = g_cpu.r[1];
+            g_hid_connect_pending = g_hid_connect_signal != 0;
+            LOGI("IHID_RegisterForConnectEvents signal=0x%08X",
+                 g_hid_connect_signal);
+            g_cpu.r[0] = 0;
+            break;
+        }
+        g_cpu.r[0] = 0;
         break;
     case 7:
         if (clsid == AEECLSID_DISPLAY_REAL) { /* Update */
