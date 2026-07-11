@@ -759,25 +759,20 @@ static void draw_prim(uint32_t mode, int count,
 
 static uint32_t decode_vertex_ptr(uint32_t raw_ptr) {
     uint32_t alt = zbrew_stack_arg(0);
+    bool in_ram = (raw_ptr < ZMEM_RAM_SIZE);
+    bool in_heap = (raw_ptr >= ZMEM_HEAP_BASE && raw_ptr < (ZMEM_HEAP_BASE + ZMEM_HEAP_SIZE));
+    bool in_stack = (raw_ptr >= ZMEM_STACK_BASE && raw_ptr < (ZMEM_STACK_BASE + ZMEM_STACK_SIZE));
+    bool in_vram = (raw_ptr >= ZMEM_VRAM_BASE && raw_ptr < (ZMEM_VRAM_BASE + ZMEM_VRAM_SIZE));
+
     if (raw_ptr < 0x1000u) {
-        /* Pointer muitopequeño: pega do stack. Mas valida o resultado. */
-        if (alt >= 0x04000000u) {
+        /* Pointer pequeno: pega do stack. Mas valida o resultado. */
+        if (!(alt < ZMEM_RAM_SIZE ||
+              (alt >= ZMEM_HEAP_BASE && alt < (ZMEM_HEAP_BASE + ZMEM_HEAP_SIZE)) ||
+              (alt >= ZMEM_STACK_BASE && alt < (ZMEM_STACK_BASE + ZMEM_STACK_SIZE)) ||
+              (alt >= ZMEM_VRAM_BASE && alt < (ZMEM_VRAM_BASE + ZMEM_VRAM_SIZE)))) {
             static uint32_t warn_count = 0;
             if (warn_count < 3) {
-                LOGW("decode_vertex_ptr: raw=0x%X (small) -> stack[0]=0x%X (INVÁLIDO, fora da RAM)",
-                     raw_ptr, alt);
-                warn_count++;
-            }
-            return 0;  /* fallback: sem dados, triângulo será descartado */
-        }
-        return alt;
-    }
-    if (raw_ptr >= ZMEM_STACK_BASE && raw_ptr < (ZMEM_STACK_BASE + ZMEM_STACK_SIZE)) {
-        /* Pointer está na stack: pega alternative */
-        if (alt >= 0x04000000u) {
-            static uint32_t warn_count = 0;
-            if (warn_count < 3) {
-                LOGW("decode_vertex_ptr: raw=0x%X (stack) -> stack[0]=0x%X (INVÁLIDO, fora da RAM)",
+                LOGW("decode_vertex_ptr: raw=0x%X (small) -> stack[0]=0x%X (INVALID, fora do mapa)",
                      raw_ptr, alt);
                 warn_count++;
             }
@@ -785,15 +780,20 @@ static uint32_t decode_vertex_ptr(uint32_t raw_ptr) {
         }
         return alt;
     }
-    /* Pointer válido (em RAM) */
+
+    if (in_ram || in_heap || in_stack || in_vram) {
+        return raw_ptr;
+    }
+
     if (raw_ptr >= 0x04000000u) {
         static uint32_t warn_count = 0;
         if (warn_count < 3) {
-            LOGW("decode_vertex_ptr: raw=0x%X FORA DA RAM", raw_ptr);
+            LOGW("decode_vertex_ptr: raw=0x%X FORA DO MAPA", raw_ptr);
             warn_count++;
         }
         return 0;
     }
+
     return raw_ptr;
 }
 
@@ -1028,7 +1028,10 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         uint32_t ptr = decode_vertex_ptr(a3);
         g_va_pos.addr = ptr;
         {
-            bool valid = (a3 < 0x04000000u);
+            bool valid = (a3 < ZMEM_RAM_SIZE) ||
+                         (a3 >= ZMEM_HEAP_BASE && a3 < (ZMEM_HEAP_BASE + ZMEM_HEAP_SIZE)) ||
+                         (a3 >= ZMEM_STACK_BASE && a3 < (ZMEM_STACK_BASE + ZMEM_STACK_SIZE)) ||
+                         (a3 >= ZMEM_VRAM_BASE && a3 < (ZMEM_VRAM_BASE + ZMEM_VRAM_SIZE));
             static uint32_t vp_logs = 0;
             if (!valid) {
                 LOGD("VP INVALID ptr=0x%08X r0=0x%08X r1=0x%08X r2=0x%08X r3=0x%08X sp0=0x%08X",
@@ -1073,6 +1076,9 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         g_va_col.stride = (int)a2;
         uint32_t ptr = decode_vertex_ptr(a3);
         g_va_col.addr = ptr;
+        g_va_col.on = (ptr != 0);
+        if (ptr != 0)
+            LOGI("glColorPointer: size=%d type=0x%X stride=%d addr=0x%08X", a0, a1, a2, ptr);
         break;
 
     case GLFN_Color4x:
@@ -1411,3 +1417,4 @@ void zgl_handle(uint32_t slot)
         break;
     }
 }
+
