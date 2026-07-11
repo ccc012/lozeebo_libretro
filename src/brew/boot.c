@@ -18,6 +18,7 @@
 #include "../memory/memory.h"
 #include "../input/input.h"
 #include "../gpu/egl_gl.h"
+#include "../gpu/framebuffer.h"
 #include "../debug/log.h"
 
 uint32_t zbrew_uptime_ms(void);
@@ -204,6 +205,60 @@ static uint32_t g_stub_vtbl = 0;
 #define ZHID_JOYSTICK_UID 0x0106C3FDu
 static uint32_t g_device_bitmap = 0;
 
+/* Estado mínimo do IDisplay real (layout de 48 slots do SDK Zeebo). */
+#define ZDISPLAY_RGB_NONE       0xFFFFFFFFu
+#define ZDISPLAY_RECT_FRAME     0x00000001u
+#define ZDISPLAY_RECT_FILL      0x00000002u
+static uint32_t g_display_text_color = 0xFFFFFF00u;
+static uint32_t g_display_background_color = 0x00000000u;
+static uint32_t g_display_line_color = 0xFFFFFF00u;
+static int g_display_clip_x = 0;
+static int g_display_clip_y = 0;
+static int g_display_clip_w = 640;
+static int g_display_clip_h = 480;
+
+/* RGBVAL do BREW usa r<<8 | g<<16 | b<<24; o framebuffer é XRGB8888. */
+static uint32_t display_rgbval_to_xrgb(uint32_t rgb) {
+    uint32_t r = (rgb >> 8) & 0xFFu;
+    uint32_t g = (rgb >> 16) & 0xFFu;
+    uint32_t b = (rgb >> 24) & 0xFFu;
+    return 0xFF000000u | (r << 16) | (g << 8) | b;
+}
+
+static void display_read_rect(uint32_t p_rect, int *x, int *y, int *w, int *h) {
+    *x = 0;
+    *y = 0;
+    *w = 640;
+    *h = 480;
+    if (p_rect > 1 && zmem_host_ptr(p_rect, 8)) {
+        *x = (int16_t)zmem_read16(p_rect + 0);
+        *y = (int16_t)zmem_read16(p_rect + 2);
+        *w = (int16_t)zmem_read16(p_rect + 4);
+        *h = (int16_t)zmem_read16(p_rect + 6);
+    }
+}
+
+static bool display_clip_rect(int *x, int *y, int *w, int *h) {
+    int x0 = *x > g_display_clip_x ? *x : g_display_clip_x;
+    int y0 = *y > g_display_clip_y ? *y : g_display_clip_y;
+    int x1 = (*x + *w) < (g_display_clip_x + g_display_clip_w)
+               ? (*x + *w) : (g_display_clip_x + g_display_clip_w);
+    int y1 = (*y + *h) < (g_display_clip_y + g_display_clip_h)
+               ? (*y + *h) : (g_display_clip_y + g_display_clip_h);
+    if (x1 <= x0 || y1 <= y0)
+        return false;
+    *x = x0;
+    *y = y0;
+    *w = x1 - x0;
+    *h = y1 - y0;
+    return true;
+}
+
+static void display_fill_rect(int x, int y, int w, int h, uint32_t rgb) {
+    if (display_clip_rect(&x, &y, &w, &h))
+        zfb_fill_rect(x, y, w, h, display_rgbval_to_xrgb(rgb));
+}
+
 /* NOTA: nao rotear AEECLSID_DISPLAY_REAL para uma vtable propria com os
  * traps ZT_DISP_* legados: o layout real do IDisplay (AEEDisplay.h, ver
  * BrewDisplay do zeemu) tem 48 slots ([4]DrawText [6]BitBlt [7]Update
@@ -313,6 +368,13 @@ void zboot_start(uint32_t entry, uint32_t applet_clsid) {
     memset(g_timers, 0, sizeof(g_timers));
     g_stub_vtbl = 0;
     g_device_bitmap = 0;
+    g_display_text_color = 0xFFFFFF00u;
+    g_display_background_color = 0x00000000u;
+    g_display_line_color = 0xFFFFFF00u;
+    g_display_clip_x = 0;
+    g_display_clip_y = 0;
+    g_display_clip_w = 640;
+    g_display_clip_h = 480;
     g_hid_button_signal = 0;
     g_hid_position_signal = 0;
     g_hid_event_pending = false;
@@ -928,11 +990,39 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 0;
         break;
     case 5:
-        /* A classe 0x0100101C usada no bootstrap do Pac-Mania cria
-         * dois sub-objetos de stub reais (como SignalCBFactory em case 3).
-         * Diferente de simplesmente escrever NULL, aloca objetos stub
-         * para evitar que o modulo fique preso em fallback nunca testados. */
-        if (clsid == 0x0100101Cu) {
+        if (clsid == AEECLSID_DISPLAY_REAL) { /* DrawRect */
+            uint32_t p_rect = g_cpu.r[1];
+            uint32_t clr_frame = g_cpu.r[2];
+            uint32_t clr_fill = g_cpu.r[3];
+            uint32_t flags = zbrew_stack_arg(0);
+            int x, y, w, h;
+            static uint32_t draw_rect_logs = 0;
+
+            display_read_rect(p_rect, &x, &y, &w, &h);
+            if (!p_rect && clr_frame == ZDISPLAY_RGB_NONE &&
+                clr_fill == ZDISPLAY_RGB_NONE) {
+                clr_fill = g_display_background_color;
+                flags = ZDISPLAY_RECT_FILL;
+            }
+            if ((flags & ZDISPLAY_RECT_FILL) && clr_fill != ZDISPLAY_RGB_NONE)
+                display_fill_rect(x, y, w, h, clr_fill);
+            if ((flags & ZDISPLAY_RECT_FRAME) && clr_frame != ZDISPLAY_RGB_NONE) {
+                display_fill_rect(x, y, w, 1, clr_frame);
+                display_fill_rect(x, y + h - 1, w, 1, clr_frame);
+                display_fill_rect(x, y, 1, h, clr_frame);
+                display_fill_rect(x + w - 1, y, 1, h, clr_frame);
+            }
+            if (draw_rect_logs < 16) {
+                LOGI("IDisplay_DrawRect: rect=%d,%d %dx%d frame=0x%08X "
+                     "fill=0x%08X flags=0x%X", x, y, w, h,
+                     clr_frame, clr_fill, flags);
+                draw_rect_logs++;
+            }
+            zbrew_mark_frame();
+            g_cpu.r[0] = 0;
+        } else if (clsid == 0x0100101Cu) {
+            /* Esta classe usada no bootstrap do Pac-Mania cria dois
+             * sub-objetos reais e recebe ponteiros de saída em R2/R3. */
             uint32_t obj1 = make_stub_interface(0x0100101Cu);
             uint32_t obj2 = make_stub_interface(0x0100101Cu);
             if (!obj1 || !obj2) {
@@ -961,6 +1051,11 @@ void zbrew_handle_stub(uint32_t id) {
         }
         break;
     case 7:
+        if (clsid == AEECLSID_DISPLAY_REAL) { /* Update */
+            zbrew_mark_frame();
+            g_cpu.r[0] = 0;
+            break;
+        }
         if (clsid == AEECLSID_HID_REAL) {
             uint32_t handles = g_cpu.r[2];
             uint32_t max_handles = g_cpu.r[3];
@@ -1012,6 +1107,28 @@ void zbrew_handle_stub(uint32_t id) {
         }
         g_cpu.r[0] = 0;
         break;
+    case 10:
+        if (clsid == AEECLSID_DISPLAY_REAL) { /* SetColor */
+            uint32_t index = g_cpu.r[1];
+            uint32_t color = g_cpu.r[2];
+            uint32_t previous = 0;
+            uint32_t *selected = NULL;
+            if (index == 1)
+                selected = &g_display_text_color;
+            else if (index == 2)
+                selected = &g_display_background_color;
+            else if (index == 3)
+                selected = &g_display_line_color;
+            if (selected) {
+                previous = *selected;
+                if (color != ZDISPLAY_RGB_NONE)
+                    *selected = color;
+            }
+            g_cpu.r[0] = previous;
+            break;
+        }
+        g_cpu.r[0] = 0;
+        break;
     case 14:
         if (clsid == ZCLSID_HID_DEVICE) {
             g_hid_position_signal = g_cpu.r[1];
@@ -1036,6 +1153,41 @@ void zbrew_handle_stub(uint32_t id) {
             if (g_cpu.r[1]) zmem_write32(g_cpu.r[1], g_device_bitmap);
             LOGI("IDisplay_GetDeviceBitmap -> 0x%08X", g_device_bitmap);
             g_cpu.r[0] = g_device_bitmap ? 0 : 1;
+            break;
+        }
+        g_cpu.r[0] = 0;
+        break;
+    case 18:
+        if (clsid == AEECLSID_DISPLAY_REAL) { /* SetClipRect */
+            uint32_t p_rect = g_cpu.r[1];
+            if (p_rect && zmem_host_ptr(p_rect, 8)) {
+                g_display_clip_x = (int16_t)zmem_read16(p_rect + 0);
+                g_display_clip_y = (int16_t)zmem_read16(p_rect + 2);
+                g_display_clip_w = (int16_t)zmem_read16(p_rect + 4);
+                g_display_clip_h = (int16_t)zmem_read16(p_rect + 6);
+            } else {
+                g_display_clip_x = 0;
+                g_display_clip_y = 0;
+                g_display_clip_w = 640;
+                g_display_clip_h = 480;
+            }
+            g_cpu.r[0] = 0;
+            break;
+        }
+        g_cpu.r[0] = 0;
+        break;
+    case 19:
+        if (clsid == AEECLSID_DISPLAY_REAL) { /* GetClipRect */
+            uint32_t p_rect = g_cpu.r[1];
+            if (p_rect && zmem_host_ptr(p_rect, 8)) {
+                zmem_write16(p_rect + 0, (uint16_t)g_display_clip_x);
+                zmem_write16(p_rect + 2, (uint16_t)g_display_clip_y);
+                zmem_write16(p_rect + 4, (uint16_t)g_display_clip_w);
+                zmem_write16(p_rect + 6, (uint16_t)g_display_clip_h);
+                g_cpu.r[0] = 0;
+            } else {
+                g_cpu.r[0] = 14; /* EBADPARM */
+            }
             break;
         }
         g_cpu.r[0] = 0;
