@@ -183,6 +183,8 @@ void zboot_start(uint32_t entry, uint32_t applet_clsid);
 uint32_t zboot_get_applet_object(void);
 /* Trap ZT_GUEST_RETURN: avanca a maquina de estados */
 void zboot_on_guest_return(void);
+/* Processa timers expirados e executa callbacks */
+void zboot_process_timers(void);
 /* Chamado por frame: dispara timers vencidos (IShell_SetTimer) */
 void zboot_tick(uint32_t elapsed_ms);
 /* Dispatch dos traps do IShell real (0x200+) */
