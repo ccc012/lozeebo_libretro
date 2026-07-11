@@ -62,44 +62,48 @@ jogue".
 
 ## Status atual
 
-**Nenhum jogo produz frames de gameplay ainda.** O que existe hoje é um pipeline real e
-funcional — CPU, memória, HLE de BREW, framebuffer e áudio — que consegue levar ROMs comerciais
-reais bem adiante no processo de boot de um applet BREW, mas que ainda não chega a desenhar
-jogabilidade na tela. É deliberadamente descrito assim para não gerar expectativa errada: isto é
-"em construção com progresso real", não "quase pronto".
+**Marco de 2026-07-11 (rodadas 2/3 de desenvolvimento): os 4 jogos do Tier 1 agora
+completam o boot inteiro** — `AEEMod_Load → IModule_CreateInstance → EVT_APP_START →
+"rodando"` — **sem nenhum descarrilamento de CPU**, confirmado por smoke test contra as
+ROMs reais. Nenhum jogo produz frames de *gameplay* ainda (o que aparece na tela vai de
+tela preta a preenchimento branco real via `IDisplay_DrawRect`), mas os dois piores
+bloqueios históricos do projeto — o estouro de stack do Pac-Mania e o scatter-load do
+Zeeboids — foram resolvidos de verdade, com causa raiz comprovada por desmontagem.
 
 ### O que já funciona de ponta a ponta
 
 - Carrega arquivos `.mod`/`.mif` comerciais reais do Zeebo (não apenas ROMs sintéticas de teste).
 - Executa código ARM/Thumb real dos jogos através do interpretador de CPU.
-- Avança pela máquina de estados real de boot do BREW: `AEEMod_Load → IModule_CreateInstance →
-  EVT_APP_START → rodando`.
-- Uma ROM comercial (**Zeebo Family Pack**) chega ao estado **"rodando"** sem travar, com
-  display, arquivos, som e joystick (via HID) inicializados de verdade, e já produz frames
-  de vídeo pelo caminho EGL/GL HLE.
-- Historicamente, um ROM sintético feito à mão (`tests/roms/make_test_rom.py`, removido do repo
-  em `1ffb04d` junto com as ROMs comerciais) já desenhou uma tela azul com um retângulo vermelho
-  através do pipeline completo (loader → CPU → trap HLE → framebuffer → vídeo) — prova de que a
-  "encanação" básica funciona. Hoje a validação é feita direto com ROMs comerciais reais (ver
-  tabela abaixo), não mais com esse gerador sintético.
+- **Os 4 jogos prioritários completam a máquina de estados real de boot do BREW** sem
+  descarrilar: `AEEMod_Load → IModule_CreateInstance → EVT_APP_START → rodando`.
+- O loader agora faz **HLE do bootstrap PIC/scatter-load do armcc** (`mod_loader.c`): módulos
+  `mod1` com o código real deslocado no arquivo (`+0x200`) são mapeados direto na VA 0 com BSS
+  correto, pulando o stub de relocação que derrubava Pac-Mania e Zeeboids.
+- Motor de eventos real: `IShell_SetTimer` + `zboot_process_timers()` em `retro_run()` —
+  timers do jogo expiram e disparam callbacks reais no guest (confirmado no Pac-Mania e
+  Double Dragon).
+- **Double Dragon pinta a tela de verdade** via `IDisplay_DrawRect` real (layout BREW de 48
+  slots) — o framebuffer sai de preto para branco por comando do próprio jogo.
+- O rasterizador GLES 1.x mínimo (`egl_gl.c`) já desenhou um quadrilátero com gradiente via
+  `glDrawArrays` real em sessões anteriores (Family Pack).
 
-### Resultado real por ROM comercial (tabela de `docs/TESTING.md`)
+### Resultado real por ROM comercial (smoke test de 2026-07-11, pós-rodada 3)
 
 | ROM | CLSID | Progresso atual |
 |---|---|---|
-| **Zeebo Family Pack** | `0x010903C6` | Mais avançado: passa por `AEEMod_Load`, `IModule_CreateInstance`, inicialização de display/arquivos/som/joystick, trata `EVT_APP_START` e chega a "rodando" **sem descarrilar**. O rasterizador GLES 1.x mínimo já desenha triângulos texturizados reais via `glDrawArrays` (um quadrilátero com gradiente já foi confirmado renderizando) — mas `glVertexPointer` às vezes recebe um endereço inválido (`0x00000003`) e os vértices computados caem fora da área visível, então ainda não há um frame de menu correto na tela. |
-| **Pac-Mania** | `0x01087B72` | `AEEMod_Load` OK, entra em `IModule_CreateInstance`, stub BREW `0x0100101C` é criado. O bug que fazia a CPU descarrilar (SP do guest saindo da stack real e apontando para a VRAM) tem uma correção aplicada (`zbrew_handle_stub()` case 5 passou a alocar stubs reais em vez de escrever `NULL`) — mas **ainda não foi re-testada ponta a ponta** contra a ROM real para confirmar que o `CreateInstance` completa sem descarrilar. Diagnóstico e status do fix em `docs/PROGRESS.md`. |
-| **Double Dragon** | `0x0102F789` | CLSID já identificado via MIF; `.mod` é uma variante "raw" sem o magic `BREW` esperado pelo parser atual — boot ainda não validado ponta a ponta. |
-| **Zeeboids** | não fixado | Ainda não validado ponta a ponta. |
+| **Double Dragon** | `0x0102F789` | Boot completo até "rodando". Timers ativos, e o jogo **desenha de verdade**: `IDisplay_DrawRect` real preenche o framebuffer (preto → branco confirmado no smoke test). O mais próximo de mostrar imagem reconhecível. |
+| **Pac-Mania** | `0x01087B72` | Boot completo até "rodando" **sem descarrilar** — o estouro de stack (SP→VRAM) foi resolvido pelo HLE do bootstrap PIC no loader. Timers disparam callbacks continuamente (~70k instruções/60 frames). Tela ainda preta: falta o caminho de desenho que o jogo usa. |
+| **Zeebo Family Pack** | `0x010903C6` | Boot completo até "rodando". **Regressão conhecida**: o jogo agenda trabalho via *signals* (`SignalCBFactory`), não timers — e a política atual de "CPU parada sem timers" (`a2f6767`) deixa a CPU estacionada após o boot, então o loop de render GL que existia antes **parou de rodar**. Reativar esse caminho é o bloqueio nº 1 atual. |
+| **Zeeboids** | `0x0108FF1A` | Boot completo até "rodando" (antes travava dentro do próprio `AEEMod_Load`). CLSID confirmado byte a byte no `.mif`. Executa ~545k instruções no `EVT_APP_START` e fica idle — mesmo caso do Family Pack (espera eventos que ainda não entregamos). |
 
 ### Por que nada é "jogável" ainda
 
-- O **Family Pack** já desenha geometria texturizada real (não mais um quad de teste), mas um bug
-  de transformação/viewport ainda joga os vértices para fora da tela, e o resto da cobertura de
-  GLES 1.x (blend, depth, texturas completas) segue mínima.
-- O fix de corrupção de stack do **Pac-Mania** foi implementado (`case 5` de
-  `zbrew_handle_stub()` em `src/brew/boot.c`) mas ainda não foi confirmado com um teste real
-  ponta a ponta — é o próximo passo pendente, não um bloqueio em aberto sem diagnóstico.
+- **Signals não disparam**: Family Pack e Zeeboids agendam seu game loop via
+  `ISignal`/`SignalCBFactory`, e o core ainda só dirige *timers* — a CPU fica parada
+  esperando um evento que nunca chega. É o próximo alvo prioritário.
+- **Caminhos de desenho incompletos**: Double Dragon já usa `IDisplay_DrawRect` real, mas
+  texto/bitmap/blit do IDisplay e a cobertura GLES (blend, depth, texturas completas)
+  seguem mínimos — então "desenhar" hoje significa retângulos e clear, não cenas.
 - Não há save states, nem exposição de memória para RetroAchievements/cheats — ambos
   explicitamente adiados ("fase 7"/futuro) no código atual.
 
@@ -168,9 +172,11 @@ CLSID tenta, em ordem: (1) ler o `.mif` companheiro (metadados legíveis), (2) e
 constantes conhecidas dentro do próprio `.mif` **e**, quando presente, do `.bar` companheiro
 (varredura de arquivo inteiro, não só os primeiros bytes), (3) inferir pela convenção de path
 `mod/<id>/<jogo>.mod` do dump. Também detecta (sem validar conteúdo) um `.sig` companheiro, fato
-de compatibilidade observado no Infuse — ver `docs/THIRD_PARTY.md`. Essa é a camada que ainda
-bloqueia jogos com CLSID desconhecido (ex.: Zeeboids); `analyze_clsids.ps1` na raiz do repo é a
-ferramenta usada para varrer o romset externo em busca desses CLSIDs.
+de compatibilidade observado no Infuse — ver `docs/THIRD_PARTY.md`. Desde 2026-07-11 o loader
+também faz **HLE do bootstrap PIC do armcc**: módulos `mod1` com código real deslocado no
+arquivo (`+0x18` do header, tipicamente `0x200`) são copiados direto para a VA 0 com BSS
+correto, dispensando o scatter-loader que descarrilava Pac-Mania/Zeeboids.
+`analyze_clsids.ps1` na raiz varre o romset externo em busca de CLSIDs de outros títulos.
 
 ### HLE do BREW/AEE (`src/brew/`)
 
@@ -332,10 +338,10 @@ Nenhuma, além de um compilador C e do toolchain do alvo. O core é C autocontid
 2. Abra o RetroArch → **Load Core** → procure por "Zeebo" (deve aparecer com uma string de
    versão, ex. `0.2-cpu`).
 3. **Load Content** → selecione um arquivo `.mod` ou `.mif` (extensões aceitas hoje:
-   `valid_extensions = "mod|mif|zip"`). As ROMs comerciais **não estão mais no repositório**
-   (removidas em `1ffb04d` para não versionar ~2.1 GB) — hoje vivem em
-   `C:\Users\Lucas\Downloads\zeebo-romset-and-devtools\` (68 jogos, ver
-   `tests/roms/README.md` para o guia rápido e `docs/TESTING.md` para os caminhos completos).
+   `valid_extensions = "mod|mif|zip"`). As 4 ROMs do Tier 1 estão em `tests/roms/`
+   (`real_pacmania_game.mod`, `real_family_pack_game.mod`, `real_ddragon_game.mod`,
+   `real_zeeboids_game.mod`); o romset completo (68 jogos, ~2.1 GB) vive fora do repo em
+   `C:\Users\Lucas\Downloads\zeebo-romset-and-devtools\` (ver `docs/TESTING.md`).
 4. Resultado esperado depende do jogo — veja a tabela em [Status atual](#status-atual). Em
    nenhum caso o RetroArch em si deve travar: se o boot emperrar, é a CPU emulada que para
    sozinha e loga `CPU descarrilou`.
@@ -375,18 +381,16 @@ SP=...)` com um dump de trace de 64 PCs. Detalhes completos, incluindo como ler 
 
 Da seção "Próximos Passos" de `docs/PROGRESS.md`:
 
-- [ ] Re-testar o fix do desvio do SP para a VRAM durante o `IModule_CreateInstance` do
-      Pac-Mania ponta a ponta contra a ROM real (correção já implementada em `aa3dfe2`, falta
-      confirmação de teste — ver `docs/PROGRESS.md`).
-- [ ] Corrigir a transformação/viewport do Family Pack: o rasterizador GLES 1.x mínimo já
-      desenha triângulos texturizados reais, mas os vértices caem fora da área visível e
-      `glVertexPointer` às vezes recebe um endereço inválido (ver `docs/PROGRESS.md`).
-- [ ] Reverse engineering mais profundo do formato MOD real (entry point, relocação completa).
-- [ ] Resolver vtables/class IDs reais restantes do BREW para outros títulos (Double Dragon,
-      Zeeboids ainda não têm CLSID/fluxo de boot confirmados). O loader agora varre o `.mif`
-      inteiro e também o `.bar` companheiro em busca de CLSID (não só os primeiros 8KB do
-      `.mif`) — falta rodar contra o romset completo (68 jogos) e medir quantos títulos passam
-      a resolver CLSID automaticamente.
+- [ ] **Dirigir signals** (`ISignal`/`SignalCBFactory`): Family Pack e Zeeboids agendam o
+      game loop por signals, não timers — hoje a CPU fica estacionada depois do boot e o
+      loop de render do Family Pack (que já funcionou) parou de rodar. Bloqueio nº 1.
+- [ ] Expandir o IDisplay real além do `DrawRect` (DrawText, BitBlt, bitmaps) — Double
+      Dragon já desenha retângulos reais; o próximo nível é imagem reconhecível.
+- [ ] Re-validar a transformação/viewport do rasterizador GLES quando o loop GL do Family
+      Pack voltar a rodar (fix de ponteiros de vértice já resgatado em `f4ba57d`).
+- [ ] Rodar `analyze_clsids.ps1`/smoke test contra o romset completo (68 jogos) e medir
+      quantos títulos resolvem CLSID e completam o boot com o loader atual (o HLE do
+      bootstrap PIC deve destravar vários módulos `mod1` além do Tier 1).
 - [ ] Parsing estrutural completo de MIF e BAR (hoje: extração heurística de nome e apenas
       detecção de existência, respectivamente).
 - [ ] Popular `tests/test_cpu.c` e `tests/test_memory.c` (hoje são arquivos vazios/placeholder —

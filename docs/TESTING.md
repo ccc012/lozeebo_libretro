@@ -39,8 +39,16 @@ cl /nologo /W3 tests\libretro_smoke.c /Fe:tests\libretro_smoke.exe
 
 ### Rodar contra uma ROM real
 
-**As ROMs comerciais não ficam mais dentro do repositório** (removidas em `1ffb04d`,
-2026-07-11, para não versionar ~2.1 GB de conteúdo). Elas vivem em uma pasta externa:
+As 4 ROMs do Tier 1 estão dentro do repo, em `tests/roms/`:
+
+```powershell
+tests\libretro_smoke.exe x64\Release\zeebo_libretro.dll tests\roms\real_pacmania_game.mod
+tests\libretro_smoke.exe x64\Release\zeebo_libretro.dll tests\roms\real_family_pack_game.mod
+tests\libretro_smoke.exe x64\Release\zeebo_libretro.dll tests\roms\real_ddragon_game.mod
+tests\libretro_smoke.exe x64\Release\zeebo_libretro.dll tests\roms\real_zeeboids_game.mod
+```
+
+O romset completo (68 jogos, ~2.1 GB) vive fora do repo, em:
 
 ```
 C:\Users\Lucas\Downloads\zeebo-romset-and-devtools\Zeebo\Zeebo\Zeebo Game & App Compilation - OpenZeebo\
@@ -48,17 +56,9 @@ C:\Users\Lucas\Downloads\zeebo-romset-and-devtools\Zeebo\Zeebo\Zeebo Game & App 
 
 (pacotes `.7z` por jogo, mais uma pasta `274804\` já extraída com `mif/<id>.mif` e
 `mod/<id>/...` de vários títulos juntos — usada para varredura em lote, ver
-`analyze_clsids.ps1` na raiz do repo). Ver `tests/roms/README.md` para o guia rápido.
-
-```powershell
-tests\libretro_smoke.exe x64\Release\zeebo_libretro.dll `
-    "C:\Users\Lucas\Downloads\zeebo-romset-and-devtools\Zeebo\Zeebo\Zeebo Game & App Compilation - OpenZeebo\274804\mod\276212\pacmania.mod"
-```
-
-Troque o ID para testar os outros títulos prioritários (Tier 1): `276212` (Pac-Mania),
-`277229` (Zeebo Family Pack), `274754` (Double Dragon), `279382` (Zeeboids). Os demais
-64 jogos do pacote ainda não têm CLSID/fluxo de boot validado — ver
-`BLOCKERS_ANALYSIS.md` na raiz do repo para o checklist de teste por jogo.
+`analyze_clsids.ps1` na raiz do repo). IDs Tier 1: `276212` (Pac-Mania), `277229`
+(Family Pack), `274754` (Double Dragon), `279382` (Zeeboids). Os demais 64 jogos ainda
+não têm CLSID/fluxo de boot validado — ver `BLOCKERS_ANALYSIS.md` para o checklist.
 
 **O que observar na saída (stderr)**:
 - Linhas `[INFO] [Zeebo] ...` / `[ERROR] [Zeebo] ...` — progresso do boot (loader, CLSID
@@ -117,12 +117,12 @@ true`) e loga `CPU descarrilou`, mantendo o RetroArch responsivo.
 
 ## Estado esperado por ROM
 
-| ROM | CLSID | Progresso atual |
+| ROM | CLSID | Progresso atual (2026-07-11, pós-rodada 3) |
 |---|---|---|
-| Pac-Mania | `0x01087B72` | `AEEMod_Load` OK, entra em `IModule_CreateInstance`, stub BREW `0x0100101C` criado. O bug de SP saindo para a VRAM durante o `CreateInstance` (fetch caía em `0xEA00000C`) tem correção aplicada (`aa3dfe2`, 2026-07-10 — case 5 de `zbrew_handle_stub()` passou a alocar stubs reais em vez de `NULL`), mas **ainda não foi re-testado ponta a ponta contra a ROM real** para confirmar que o `CreateInstance` completa sem descarrilar. |
-| Zeebo Family Pack | `0x010903C6` | Passa por `AEEMod_Load`, `IModule_CreateInstance`, init de display/arquivos/som/joystick, `EVT_APP_START` tratado, estado "rodando". O rasterizador GLES 1.x mínimo já desenha triângulos texturizados reais via `glDrawArrays`/`GL_TRIANGLE_FAN` (não mais um quad de teste) — um quadrilátero com gradiente já foi confirmado renderizando (`b427955`). Bloqueio atual: `glVertexPointer` às vezes recebe `0x00000003` (endereço inválido) e os vértices computados caem fora da área visível — sinal de bug na transformação/viewport, não nos dados em si (ver `7a55083`). |
-| Double Dragon | `0x0102F789` | CLSID já identificado via MIF, mas `ddragonz.mod` é variante raw, sem o magic `BREW` esperado — ainda não validado ponta a ponta. |
-| Zeeboids | (não fixado) | Ainda não validado ponta a ponta — CLSID desconhecido; `analyze_clsids.ps1` na raiz do repo existe para varrer o romset externo em busca dele. |
+| Double Dragon | `0x0102F789` | Boot completo até "rodando" sem descarrilar. Timers ativos e **desenho real**: `IDisplay_DrawRect` preenche o framebuffer (fb sai de `0xFF000000` para `0xFFFFFFFF` no smoke test). O mais avançado. |
+| Pac-Mania | `0x01087B72` | Boot completo até "rodando" **sem descarrilar** — o estouro de stack (SP→VRAM) foi resolvido pelo HLE do bootstrap PIC no loader (`e747bd8`). Timers disparam callbacks continuamente. Tela ainda preta. |
+| Zeebo Family Pack | `0x010903C6` | Boot completo até "rodando". **Regressão conhecida**: o jogo agenda o game loop via signals (não timers), e a política "CPU parada sem timers" (`a2f6767`) deixa a CPU idle após o boot — o loop GL que já funcionou parou de rodar (0 chamadas GL no smoke test). Bloqueio nº 1 atual. |
+| Zeeboids | `0x0108FF1A` | Boot completo até "rodando" (antes travava no `AEEMod_Load`). Executa ~545k instruções no `EVT_APP_START` e fica idle — mesmo caso de signals do Family Pack. |
 
 Se o comportamento observado ao testar divergir do descrito aqui, é sinal de que ou algo
 quebrou ou algo avançou — atualize `docs/PROGRESS.md` de acordo.

@@ -291,6 +291,71 @@ Tier 1, sem exigir cadastro manual de nome de arquivo para cada um dos 68 jogos 
 **Ainda nao testado contra o romset completo** - proximo passo e rodar `analyze_clsids.ps1` (ou
 o loader de verdade) contra os 68 titulos e registrar quantos CLSIDs novos aparecem.
 
+## Sessao 2026-07-11 (3): Rodadas 2/3 multi-IA - os 4 jogos Tier 1 completam o boot
+
+Duas rodadas de trabalho paralelo (3 IAs na rodada 2, prompt de 6 tarefas + sessao
+unica na rodada 3) transformaram o estado do projeto. Relatorios detalhados:
+`STATUS_A_EVENTO_DOUBLE_DRAGON.md`, `STATUS_B_RENDER_FAMILYPACK.md`,
+`STATUS_C_BOOT_PACMANIA_ZEEBOIDS.md` (raiz do repo).
+
+### Rodada 2 (diagnostico com evidencia)
+
+1. **Event loop confirmado funcionando** (`9ea52b6`/`adeaa25`): `zboot_process_timers()`
+   em `boot.c` + chamada em `retro_run()`. Timers do `IShell_SetTimer` disparam nos
+   frames certos. De quebra, corrigiu uma suposicao errada do commit `72fbf38`:
+   `PC=0xF0000A40` nao e API faltando - `ZTRAP_ID(0xF0000A40)=0x290=ZT_GUEST_RETURN`,
+   o retorno normal de guest call.
+2. **Pac-Mania: causa raiz real do descarrilamento** (`STATUS_C`): o fix antigo do
+   case 5 nao era suficiente. Matematica de stack exata provou que `CreateInstance`
+   era chamado num endereco sem prologo (meio de funcao) e o epilogo compartilhado
+   estourava o SP em exatos 0x58 bytes para dentro da VRAM (`SP=0x30000048`,
+   `0x30000048-0x58=0x2FFFFFF0` = SP inicial do cpu_reset).
+3. **Zeeboids: CLSID confirmado byte a byte** (`6b0c89c`): `0x0108FF1A` no offset 8116
+   do `.mif`. Com isso o jogo passou de "trava no AEEMod_Load" para 1M+ instrucoes -
+   e a nova causa raiz foi isolada: o stub de scatter-load do armcc esperava a
+   `Region$$Table` num layout que o loader nao reproduzia (r1=0 por design, CPU
+   andava por RAM zerada ate 0x04000000).
+4. **Family Pack: ponteiros de heap aceitos** em `decode_vertex_ptr()` (resgatado em
+   `f4ba57d` depois de quase se perder por falta de isolamento de working tree -
+   licao: rodadas multi-IA agora usam `git worktree`, nao so branches).
+
+### Rodada 3 (implementacao dos fixes - branch `rodada3/sessao-unica`, merged em master)
+
+1. **`e747bd8` - HLE do bootstrap PIC no loader** (o fix mais importante do projeto ate
+   agora): o header `mod1` informa em `+0x18` o deslocamento do codigo real
+   (tipicamente `0x200`); o loader agora copia code+data desse ponto direto para a
+   VA 0, zera o BSS correto e dispensa o scatter-loader do armcc. **Resultado:
+   Pac-Mania e Zeeboids passam por CreateInstance e EVT_APP_START sem descarrilar.**
+2. **`65ae02e` - IDisplay real desenha**: o slot 5 do IDisplay e `DrawRect` (nao um
+   criador de subobjetos, como a rodada 2 hipotetizou). Implementados DrawRect,
+   Update, SetColor e recorte no layout BREW de 48 slots. **Double Dragon preenche o
+   framebuffer de verdade** (preto -> branco por comando do jogo).
+3. **`c8ae875` - Layout real do AEEMod**: `+4` e refcount, `pIShell` fica em `+8`
+   (a correcao anterior escrevia por cima do refcount).
+4. **`a2f6767` - CPU parada sem timers**: evita reexecutar o trap de retorno a cada
+   frame. Zero "retornos em estado inesperado" na regressao Tier 1 - **mas ver
+   regressao conhecida abaixo**.
+
+### Estado verificado por smoke test (build do merge, 2026-07-11)
+
+| Jogo | Boot | Depois do boot |
+|---|---|---|
+| Double Dragon | ate "rodando", sem descarrilar | timers ativos, `IDisplay_DrawRect` real pinta o framebuffer (fb `0xFF000000` -> `0xFFFFFFFF`) |
+| Pac-Mania | ate "rodando", sem descarrilar | timers disparam callbacks continuamente (~70k instrucoes/60 frames); tela ainda preta |
+| Zeeboids | ate "rodando", sem descarrilar | ~545k instrucoes no EVT_APP_START, depois idle (espera eventos) |
+| Family Pack | ate "rodando", sem descarrilar | **REGRESSAO**: zero chamadas GL - ver abaixo |
+
+### Regressao conhecida (bloqueio nº 1 para a proxima rodada)
+
+O Family Pack agenda seu game loop via **signals** (`SignalCBFactory_CreateSignal`),
+nao timers. Com a politica de `a2f6767` ("CPU fica parada quando nao ha timers"), a
+CPU estaciona depois do boot e o loop de render GL que ja funcionou (glClear ->
+glDrawArrays -> eglSwapBuffers, sessoes 2026-07-08) **parou de rodar** - confirmado
+por smoke test: 0 ocorrencias de glClear/DrawArrays/eglSwapBuffers, instrucoes
+congeladas em 729568 do frame 1 ao 121. Zeeboids esta no mesmo caso. O proximo passo
+e dirigir signals (dispatch dos `ISignal` registrados, ou re-liberar a CPU quando ha
+signals pendentes), sem desfazer o ganho de `a2f6767` para os jogos baseados em timer.
+
 ## Estatisticas
 - Modulos implementados: ~45 arquivos .c/.h em `src/` (~15.500 linhas .c+.h; ~6.700 so em .c),
   distribuidos em `core/`, `cpu/`, `memory/`, `loader/`, `brew/`, `gpu/`, `audio/`, `input/`,
