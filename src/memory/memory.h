@@ -64,6 +64,16 @@ void zmem_read_cstr(uint32_t addr, char *dst, uint32_t maxlen);
 /* Ponteiro direto para uma regiao (NULL se invalido). Uso interno
  * do framebuffer/loader para evitar copia pixel a pixel. */
 void *zmem_host_ptr(uint32_t addr, uint32_t len);
+uint8_t *zmem_ram_ptr(void);
+uint8_t *zmem_heap_ptr(void);
+uint8_t *zmem_stack_ptr(void);
+uint8_t *zmem_vram_ptr(void);
+const uint8_t *zmem_ram_ptr_const(void);
+const uint8_t *zmem_heap_ptr_const(void);
+const uint8_t *zmem_stack_ptr_const(void);
+const uint8_t *zmem_vram_ptr_const(void);
+const uint8_t *zmem_highpage_ptr_const(void);
+uint8_t *zmem_highpage_ptr(void);
 
 /* ---- Heap (alocador de blocos, usado pelo MALLOC/FREE do BREW) ---- */
 void     zheap_reset(void);
