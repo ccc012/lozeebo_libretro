@@ -5,6 +5,10 @@
 #include "../debug/log.h"
 
 uint32_t zbrew_uptime_ms(void);
+bool zboot_timer_active(int i);
+void zboot_timer_set(int i, uint32_t ms, uint32_t pfn, uint32_t puser);
+
+#define ZTIMER_MAX 16
 
 /* Cria a interface pedida pelo class ID e retorna o endereco emulado */
 static uint32_t create_by_clsid(uint32_t clsid) {
@@ -85,10 +89,23 @@ void zbrew_handle_shell(uint32_t id) {
         break;
     }
 
-    case ZT_SHELL_SETTIMER:
-        LOGW("IShell_SetTimer nao implementado (callbacks: fase 3.5)");
+    case ZT_SHELL_SETTIMER: {
+        uint32_t ms = g_cpu.r[1];
+        uint32_t pfn = g_cpu.r[2];
+        uint32_t puser = g_cpu.r[3];
+        int i;
+        for (i = 0; i < ZTIMER_MAX; i++) {
+            if (!zboot_timer_active(i)) {
+                zboot_timer_set(i, ms, pfn, puser);
+                g_cpu.r[0] = ZBREW_SUCCESS;
+                LOGI("IShell_SetTimer: %u ms, callback=0x%08X, user=0x%08X", ms, pfn, puser);
+                return;
+            }
+        }
+        LOGW("IShell_SetTimer: sem slots disponiveis");
         g_cpu.r[0] = ZBREW_EFAILED;
         break;
+    }
 
     case ZT_SHELL_GETUPTIMEMS:
         g_cpu.r[0] = zbrew_uptime_ms();

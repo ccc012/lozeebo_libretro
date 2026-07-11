@@ -69,6 +69,19 @@ typedef struct {
 } ztimer_t;
 static ztimer_t g_timers[ZTIMER_MAX];
 
+bool zboot_timer_active(int i) {
+    return i >= 0 && i < ZTIMER_MAX && g_timers[i].active;
+}
+
+void zboot_timer_set(int i, uint32_t ms, uint32_t pfn, uint32_t puser) {
+    if (i >= 0 && i < ZTIMER_MAX) {
+        g_timers[i].active = true;
+        g_timers[i].expires_ms = zbrew_uptime_ms() + ms;
+        g_timers[i].pfn = pfn;
+        g_timers[i].puser = puser;
+    }
+}
+
 const char *zboot_state_name(void) {
     switch (g_state) {
         case BOOT_IDLE: return "idle";
