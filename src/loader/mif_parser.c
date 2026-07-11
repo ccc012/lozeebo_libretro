@@ -61,6 +61,10 @@ static uint32_t clsid_from_path_hint(const char *mod_path) {
         strstr(mod_path, "Z_WHEEL")) {
         return 0x01070798u;
     }
+    if (strstr(mod_path, "Zeeboids") || strstr(mod_path, "zeeboids") ||
+        strstr(mod_path, "ZEEBOIDS")) {
+        return 0x0108FF1Au;
+    }
     return 0;
 }
 

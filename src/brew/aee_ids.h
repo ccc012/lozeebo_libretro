@@ -67,6 +67,7 @@ static const zaee_applet_t ZAEE_KNOWN_APPLETS[] = {
     { 0x01077CF4u, "Z-Wheel (2)" },
     { 0x01072195u, "Zeebo App" },
     { 0x0108FF07u, "Zeebo Extreme Baja" },
+    { 0x0108FF1Au, "Zeeboids" },
     { 0x00C9B04Bu, "Ultimate Chess 3D" },
     { 0xBF2E2021u, "Zenonia" },
     { 0x0103D666u, "PrBoom" },
