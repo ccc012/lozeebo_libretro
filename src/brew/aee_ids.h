@@ -72,6 +72,12 @@ static const zaee_applet_t ZAEE_KNOWN_APPLETS[] = {
     { 0xBF2E2021u, "Zenonia" },
     { 0x0103D666u, "PrBoom" },
     { 0x01009FF2u, "TutorI3D" },
+    { 0x01087AE8u, "FIFA 09" },
+    { 0x0108D48Eu, "Prey 3D" },
+    { 0x0108FF06u, "Air Racez" },
+    { 0x01087B73u, "Ridge Racer" },
+    { 0x0108AF6Cu, "Biohazard 4" },
+    { 0x0108C0BBu, "Rolimaz" },
 };
 #define ZAEE_KNOWN_APPLET_COUNT \
     (sizeof(ZAEE_KNOWN_APPLETS) / sizeof(ZAEE_KNOWN_APPLETS[0]))

@@ -1,4 +1,4 @@
-/* mif_parser.c - Extracao basica de metadados do MIF
+﻿/* mif_parser.c - Extracao basica de metadados do MIF
  *
  * O formato MIF completo requer reverse engineering (fase 2.3).
  * Por enquanto: procura um .mif com o mesmo nome da ROM e extrai
@@ -69,6 +69,18 @@ static uint32_t clsid_from_path_hint(const char *mod_path) {
         strstr(mod_path, "IMICRO3D")) {
         return 0x01000000u;
     }
+    if (strstr(mod_path, "chess")) return 0x01000300u;
+    if (strstr(mod_path, "fifa")) return 0x01087AE8u;
+    if (strstr(mod_path, "alpineracer")) return 0x01073825u;
+    if (strstr(mod_path, "ridgeracer")) return 0x01087B73u;
+    if (strstr(mod_path, "prey")) return 0x0108D48Eu;
+    if (strstr(mod_path, "bio4")) return 0x0108AF6Cu;
+    if (strstr(mod_path, "Rolimaz")) return 0x01010000u;
+    if (strstr(mod_path, "bjt")) return 0x01000400u;
+    if (strstr(mod_path, "AirRacez")) return 0x0108FF06u;
+    if (strstr(mod_path, "a3d")) return 0x01000300u;
+    if (strstr(mod_path, "nfs")) return 0x0108C0BCu;
+    if (strstr(mod_path, "tekken")) return 0x01000100u;
     return 0;
 }
 
@@ -206,3 +218,4 @@ bool zmif_parse_name(const char *mod_path, char *name_out, size_t maxlen) {
     }
     return false;
 }
+
