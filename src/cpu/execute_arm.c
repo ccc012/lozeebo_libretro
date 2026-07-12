@@ -404,6 +404,28 @@ void zarm_execute(uint32_t instr) {
     case 2: /* LDR/STR offset imediato */
     case 3: /* LDR/STR offset registrador */
         if (op == 3 && BIT(instr, 4)) {
+            /* ARMv6: SXTB/SXTH/UXTB/UXTH (sem acumulacao, Rn=PC).
+             * Alguns modulos ARMCC usam estas instrucoes ja no AEEMod_Load. */
+            if ((instr & 0x0FAF03F0u) == 0x06AF0070u) {
+                uint32_t value = rget(instr & 0xFu);
+                uint32_t rotate = ((instr >> 10) & 3u) * 8u;
+                int rd = (instr >> 12) & 0xFu;
+                bool is_unsigned = BIT(instr, 22) != 0;
+                bool is_halfword = BIT(instr, 20) != 0;
+                if (rotate)
+                    value = (value >> rotate) | (value << (32u - rotate));
+                if (is_halfword) {
+                    value &= 0xFFFFu;
+                    if (!is_unsigned && (value & 0x8000u))
+                        value |= 0xFFFF0000u;
+                } else {
+                    value &= 0xFFu;
+                    if (!is_unsigned && (value & 0x80u))
+                        value |= 0xFFFFFF00u;
+                }
+                rset(rd, value);
+                return;
+            }
             static uint32_t warn_count = 0;
             if (warn_count < 16) {
                 LOGW("instrucao de midia/indefinida 0x%08X (PC=0x%08X)",
