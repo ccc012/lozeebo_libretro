@@ -65,6 +65,10 @@ static uint32_t clsid_from_path_hint(const char *mod_path) {
         strstr(mod_path, "ZEEBOIDS")) {
         return 0x0108FF1Au;
     }
+    if (strstr(mod_path, "imicro3d") || strstr(mod_path, "iMicro3D") ||
+        strstr(mod_path, "IMICRO3D")) {
+        return 0x01000000u;
+    }
     return 0;
 }
 
