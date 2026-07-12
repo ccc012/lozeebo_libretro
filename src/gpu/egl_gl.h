@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 uint32_t zegl_create_interface(void);
+uint32_t zegl_create_qegl_surface(void);
 uint32_t zgl_create_interface(void);
 
 void zegl_handle(uint32_t slot);
