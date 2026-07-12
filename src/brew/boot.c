@@ -1364,11 +1364,18 @@ void zbrew_handle_stub(uint32_t id) {
         break;
     case 5:
         if (clsid == AEECLSID_QEGL_REAL) {
+            /* IQEGL_Initialize(pMe, dpy, major*, minor*, pRet_bool) - layout
+             * real confirmado via zeemu (BrewEGL.cpp, add_qegl slot 5): o
+             * out-param na pilha e um BOOLEANO de sucesso (write_bool_ret,
+             * *pRet=1), nao um ponteiro de interface. Confirmado tambem via
+             * forward-trace no supbtime.mod: o wrapper do jogo (0x10280) le
+             * de volta esse valor como seu proprio retorno e o chamador
+             * exige cmp r0,#1 (nao cmp r0,#0). */
             uint32_t pp_gl = zbrew_stack_arg(0);
             uint32_t gl = make_stub_interface(0x0103D8DDu);
             if (pp_gl)
-                zmem_write32(pp_gl, gl);
-            LOGI("IQEGL_CreateGL: surface=0x%08X out=0x%08X -> 0x%08X",
+                zmem_write32(pp_gl, 1);
+            LOGI("IQEGL_Initialize: dpy=0x%08X pRet=0x%08X -> TRUE (gl=0x%08X)",
                  g_cpu.r[1], pp_gl, gl);
             g_cpu.r[0] = gl ? 0 : 1;
             break;
@@ -1529,6 +1536,23 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 0;
         break;
     case 9:
+        if (clsid == AEECLSID_QEGL_REAL) {
+            /* IQEGL_ChooseConfig(pMe, dpy, attribList, configs, configSize,
+             * numConfig*, pRet_bool) - layout real confirmado via zeemu
+             * (BrewEGL.cpp): 3 args em R1-R3, mais 3 na pilha. */
+            uint32_t configs = g_cpu.r[3];
+            uint32_t config_size = zbrew_stack_arg(0);
+            uint32_t num_config_ptr = zbrew_stack_arg(1);
+            uint32_t success_ptr = zbrew_stack_arg(2);
+            if (configs && config_size >= 1)
+                zmem_write32(configs, 1); /* config opaco valido, id=1 */
+            if (num_config_ptr) zmem_write32(num_config_ptr, 1);
+            if (success_ptr) zmem_write32(success_ptr, 1);
+            LOGI("IQEGL_ChooseConfig: dpy=0x%08X configSize=%u -> 1 config",
+                 g_cpu.r[1], config_size);
+            g_cpu.r[0] = 0;
+            break;
+        }
         if (clsid == ZCLSID_HID_DEVICE) {
             uint32_t info = g_cpu.r[1];
             if (!g_hid_event_pending) {
@@ -1568,6 +1592,24 @@ void zbrew_handle_stub(uint32_t id) {
                     *selected = color;
             }
             g_cpu.r[0] = previous;
+            break;
+        }
+        g_cpu.r[0] = 0;
+        break;
+    case 11:
+        if (clsid == AEECLSID_QEGL_REAL) {
+            /* IQEGL_CreateWindowSurface(pMe, dpy, config, win, attribList,
+             * pSurface*) - layout confirmado via forward-trace: o wrapper do
+             * jogo (0x1056c no supbtime.mod) le de volta [sp+8] (2o arg de
+             * pilha) como retorno, e o chamador exige valor != 0 (aqui e um
+             * handle/ponteiro de verdade, nao AEE_SUCCESS). */
+            uint32_t p_surface = zbrew_stack_arg(1);
+            uint32_t surface = zegl_create_qegl_surface();
+            if (p_surface)
+                zmem_write32(p_surface, surface);
+            LOGI("IQEGL_CreateWindowSurface: dpy=0x%08X config=0x%08X win=0x%08X -> 0x%08X",
+                 g_cpu.r[1], g_cpu.r[2], g_cpu.r[3], surface);
+            g_cpu.r[0] = surface ? 0 : 1;
             break;
         }
         g_cpu.r[0] = 0;
@@ -1636,6 +1678,18 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 0;
         break;
     case 18:
+        if (clsid == AEECLSID_QEGL_REAL) {
+            /* IQEGL_MakeCurrent(pMe, dpy, draw, read, ctx, pRet_bool) - mesmo
+             * padrao boolean-via-stack do Initialize (confirmado via
+             * forward-trace: wrapper 0x10890 no supbtime.mod le [sp+8] de
+             * volta como retorno, chamador exige ==1). */
+            uint32_t success_ptr = zbrew_stack_arg(1);
+            if (success_ptr) zmem_write32(success_ptr, 1);
+            LOGI("IQEGL_MakeCurrent: dpy=0x%08X draw=0x%08X read=0x%08X",
+                 g_cpu.r[1], g_cpu.r[2], g_cpu.r[3]);
+            g_cpu.r[0] = 0;
+            break;
+        }
         if (is_display_interface(clsid)) { /* SetClipRect */
             uint32_t p_rect = g_cpu.r[1];
             if (p_rect && zmem_host_ptr(p_rect, 8)) {
