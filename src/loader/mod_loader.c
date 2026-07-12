@@ -14,8 +14,9 @@
  * 2. Binario ARM "cru" (Double Dragon, Family Pack, test ROMs):
  *    entry no offset 0 (ou branch inicial), sem header.
  *
- * Em ambos: tabela AEEHelperFuncs gravada em [entry-4] (GET_HELPER)
- * e nos slots de padding 0x1F0-0x1FC.
+ * Em ambos: tabela AEEHelperFuncs gravada nos locais esperados pelo formato.
+ * O bootstrap PIC ARMCC cru obtem a tabela em [-4] e a copia sozinho; nele,
+ * [entry-4] faz parte do codigo e nao pode ser sobrescrito.
  */
 #include <string.h>
 #include <stdio.h>
@@ -129,6 +130,7 @@ bool zmod_load(const void *data, size_t size, const char *path,
     const uint8_t *bytes = (const uint8_t *)data;
     uint32_t hdr_off = 0;
     bool has_brew_hdr = false;
+    bool raw_armcc_bootstrap = false;
     uint32_t hinted_clsid = path ? zmif_find_applet_clsid(path) : 0;
 
     if (!data || size < 8) {
@@ -161,6 +163,21 @@ bool zmod_load(const void *data, size_t size, const char *path,
     } else if (size >= 0x50 && memcmp(bytes + 0x48, "BREW", 4) == 0) {
         hdr_off = 0x40;
         has_brew_hdr = true;
+    }
+
+    /* Bootstrap PIC ARMCC observado nos modulos crus do conjunto Zeebo.
+     * A palavra em +0x10 e o deslocamento do entry real relativo a +0x9C.
+     * A assinatura usa varias instrucoes distantes para nao confundir um
+     * binario cru comum que apenas comece com um branch para +0x14. */
+    if (!has_brew_hdr && size >= 0x94 &&
+        rd32(bytes + 0x00) == 0xEA000003u &&
+        rd32(bytes + 0x14) == 0xE92D00F0u &&
+        rd32(bytes + 0x18) == 0xE24F4020u &&
+        rd32(bytes + 0x1C) == 0xE284509Cu &&
+        rd32(bytes + 0x84) == 0xE51F307Cu &&
+        rd32(bytes + 0x88) == 0xE0833005u &&
+        rd32(bytes + 0x90) == 0xE12FFF13u) {
+        raw_armcc_bootstrap = true;
     }
 
     memset(out, 0, sizeof(*out));
@@ -232,6 +249,8 @@ bool zmod_load(const void *data, size_t size, const char *path,
             }
         }
         LOGI("mod cru: %u bytes, entry=0x%08X", out->code_size, out->entry);
+        if (raw_armcc_bootstrap)
+            LOGI("mod cru: bootstrap PIC ARMCC detectado; preservando literal em +0x10");
     }
 
     /* Nome e diretorio de assets */
@@ -252,12 +271,12 @@ bool zmod_load(const void *data, size_t size, const char *path,
     /* CPU: SP no topo, LR provisorio (zboot_start define o resto) */
     zcpu_reset(out->entry, ZMEM_STACK_TOP, ZTRAP_ADDR(ZT_RETURN_APPLET));
 
-    /* Tabela de helpers AEE: [entry-4] = tabela, [entry-8] = 0,
-     * e slots de padding 0x1F0-0x1FC (se vazios) */
+    /* Tabela de helpers AEE. O bootstrap PIC cru le [-4]/[-8] e copia os
+     * valores para +0x98/+0x94 antes de saltar ao entry real em +0x9C. */
     {
         uint32_t table = zbrew_build_helper_table();
         uint32_t slot;
-        if (out->entry >= 8) {
+        if (out->entry >= 8 && !raw_armcc_bootstrap) {
             zmem_write32(out->entry - 4, table);
             zmem_write32(out->entry - 8, 0);
         }
