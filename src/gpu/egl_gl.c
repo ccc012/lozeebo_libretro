@@ -45,6 +45,11 @@ static uint32_t ensure_egl_surface(void)
     return g_egl_surface;
 }
 
+uint32_t zegl_create_qegl_surface(void)
+{
+    return ensure_egl_surface();
+}
+
 static uint32_t alloc_guest_cstr(const char *s)
 {
     uint32_t len = 0;

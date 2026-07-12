@@ -1215,6 +1215,16 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 1; /* refcount */
         break;
     case 2: /* QueryInterface (exceto IDisplay, que nao tem QI no slot 2) */
+        if (clsid == AEECLSID_QEGL_REAL &&
+            (g_cpu.r[1] == 0x0103D8DDu || g_cpu.r[1] == 0x0103D8EAu)) {
+            uint32_t iface = make_stub_interface(g_cpu.r[1]);
+            if (g_cpu.r[2])
+                zmem_write32(g_cpu.r[2], iface);
+            LOGI("IQEGL_QueryInterface(0x%08X) -> 0x%08X",
+                 g_cpu.r[1], iface);
+            g_cpu.r[0] = iface ? 0 : 1;
+            break;
+        }
         if (is_display_interface(clsid)) {
             /* GetFontMetrics(po, font, AEEFontMetrics*, u16* ascent).
              * Zerar metricas trava jogos: alturas/larguras viram
@@ -1286,6 +1296,15 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 0;
         break;
     case 4:
+        if (clsid == AEECLSID_QEGL_REAL) { /* IQEGL_InitGLSurface */
+            uint32_t surface = zegl_create_qegl_surface();
+            if (g_cpu.r[2])
+                zmem_write32(g_cpu.r[2], surface);
+            LOGI("IQEGL_InitGLSurface: bitmap=0x%08X out=0x%08X -> 0x%08X",
+                 g_cpu.r[1], g_cpu.r[2], surface);
+            g_cpu.r[0] = surface ? 0 : 1;
+            break;
+        }
         if (is_display_interface(clsid)) { /* DrawText */
             /* IDISPLAY_DrawText(po, font, psz, nl, x, y, prcBackground, dwFlags):
              * R0=po R1=font R2=psz R3=nl; x/y/prcb/flags na pilha (com possivel
@@ -1344,6 +1363,16 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 0;
         break;
     case 5:
+        if (clsid == AEECLSID_QEGL_REAL) {
+            uint32_t pp_gl = zbrew_stack_arg(0);
+            uint32_t gl = make_stub_interface(0x0103D8DDu);
+            if (pp_gl)
+                zmem_write32(pp_gl, gl);
+            LOGI("IQEGL_CreateGL: surface=0x%08X out=0x%08X -> 0x%08X",
+                 g_cpu.r[1], pp_gl, gl);
+            g_cpu.r[0] = gl ? 0 : 1;
+            break;
+        }
         if (is_display_interface(clsid)) { /* DrawRect */
             uint32_t p_rect = g_cpu.r[1];
             uint32_t clr_frame = g_cpu.r[2];
