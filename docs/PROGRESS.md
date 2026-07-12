@@ -356,6 +356,32 @@ congeladas em 729568 do frame 1 ao 121. Zeeboids esta no mesmo caso. O proximo p
 e dirigir signals (dispatch dos `ISignal` registrados, ou re-liberar a CPU quando ha
 signals pendentes), sem desfazer o ganho de `a2f6767` para os jogos baseados em timer.
 
+## Sessao 2026-07-12: Rodada 6 (sessao unica interrompida) - bug dos 13 jogos RESOLVIDO
+
+A rodada 6 rodou como sessao unica (Codex) e foi interrompida por limite de uso - mas
+commitou tudo antes (branch `rodada6/sessao-unica`, merged em master). Verificado por
+smoke test apos o merge:
+
+1. **`d3699a4` - causa raiz do lote 0x12000000**: o proprio loader corrompia a palavra
+   em `+0x10` do bootstrap ARMCC cru (sobrescrevia o literal com o endereco da tabela
+   de helpers -> a CPU calculava o entry como tabela+0x9C e executava a tabela como
+   codigo, atravessando o heap ate 0x12000000). Fix: detector estrito do bootstrap
+   preserva a palavra.
+2. **`591f59c`**: SXTB/SXTH/UXTB/UXTH (ARMv6) implementadas - Super BurgerTime
+   atravessa o AEEMod_Load.
+3. **`269de1c`**: `IDisplay1` (0x010127D4) roteado pro backend real de display
+   (slot 16 GetDeviceBitmap) - ports ARMCC deixam de ler o inicio da ROM como vtable.
+4. **`4c97f67`**: adaptador QEGL (2 QueryInterface 0x0103D8DD/0x0103D8EA,
+   InitGLSurface, criacao de superficie com out-pointer).
+
+**Resultado verificado**: 11 dos 12 jogos do antigo lote 0x12000000 chegam a
+"RODANDO"; 10 ports Data East (Super BurgerTime, Bad Dudes, Karnov's Revenge...)
+desenham ELES MESMOS o texto "InitGLSurface failed" na tela via IDisplay_DrawText -
+texto real renderizado pelo jogo. Crash (274214) saiu do crash e agora so falta CLSID.
+Zero regressao nos Tier 1 (DD 2.756.802 / Pac-Mania 145.686 / Zeeboids 544.678,
+identicos as baselines). Proximo passo nº 1 (Rodada 7): fazer o InitGLSurface do QEGL
+SUCEDER - destrava a parte grafica de 10 jogos de uma vez. Ver PROMPT_RODADA_7.md.
+
 ## Estatisticas
 - Modulos implementados: ~45 arquivos .c/.h em `src/` (~15.500 linhas .c+.h; ~6.700 so em .c),
   distribuidos em `core/`, `cpu/`, `memory/`, `loader/`, `brew/`, `gpu/`, `audio/`, `input/`,
