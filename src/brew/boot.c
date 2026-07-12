@@ -575,6 +575,13 @@ static bool is_known_applet(uint32_t clsid) {
     return false;
 }
 
+/* IDisplay1 mantem o prefixo de vtable de IDisplay usado pelos jogos
+ * ARMCC (incluindo GetDeviceBitmap no slot 16). */
+static bool is_display_interface(uint32_t clsid) {
+    return clsid == AEECLSID_DISPLAY_REAL ||
+           clsid == AEECLSID_DISPLAY1_REAL;
+}
+
 static bool is_stub_service(uint32_t clsid) {
     switch (clsid) {
     case AEECLSID_DISPLAY_REAL:
@@ -1208,7 +1215,7 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 1; /* refcount */
         break;
     case 2: /* QueryInterface (exceto IDisplay, que nao tem QI no slot 2) */
-        if (clsid == AEECLSID_DISPLAY_REAL) {
+        if (is_display_interface(clsid)) {
             /* GetFontMetrics(po, font, AEEFontMetrics*, u16* ascent).
              * Zerar metricas trava jogos: alturas/larguras viram
              * divisores no rasterizador de texto deles. */
@@ -1232,7 +1239,7 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 1; /* EFAILED */
         break;
     case 3:
-        if (clsid == AEECLSID_DISPLAY_REAL) {
+        if (is_display_interface(clsid)) {
             /* MeasureTextEx(po, font, AECHAR* psz, int nl, nMaxWidth, pnFits)
              * -> R0=largura em pixels, usa a mesma resolucao de texto (AECHAR/
              * byte/descritor) e a fonte 5x7 usadas por DrawText, para que a
@@ -1279,7 +1286,7 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 0;
         break;
     case 4:
-        if (clsid == AEECLSID_DISPLAY_REAL) { /* DrawText */
+        if (is_display_interface(clsid)) { /* DrawText */
             /* IDISPLAY_DrawText(po, font, psz, nl, x, y, prcBackground, dwFlags):
              * R0=po R1=font R2=psz R3=nl; x/y/prcb/flags na pilha (com possivel
              * ajuste de base para thunks que duplicam this/args - ver
@@ -1337,7 +1344,7 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 0;
         break;
     case 5:
-        if (clsid == AEECLSID_DISPLAY_REAL) { /* DrawRect */
+        if (is_display_interface(clsid)) { /* DrawRect */
             uint32_t p_rect = g_cpu.r[1];
             uint32_t clr_frame = g_cpu.r[2];
             uint32_t clr_fill = g_cpu.r[3];
@@ -1406,7 +1413,7 @@ void zbrew_handle_stub(uint32_t id) {
             g_cpu.r[0] = 0;
             break;
         }
-        if (clsid == AEECLSID_DISPLAY_REAL) { /* BitBlt */
+        if (is_display_interface(clsid)) { /* BitBlt */
             /* IDISPLAY_BitBlt(po, xDest, yDest, cxDest, cyDest, pSrc, xSrc,
              * ySrc, rop): R1=xDest R2=yDest R3=cxDest; cyDest/pSrc/xSrc/ySrc/
              * rop na pilha. pSrc precisa ser um bitmap ZCLSID_DEVICE_BITMAP
@@ -1458,7 +1465,7 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 0;
         break;
     case 7:
-        if (clsid == AEECLSID_DISPLAY_REAL) { /* Update */
+        if (is_display_interface(clsid)) { /* Update */
             zbrew_mark_frame();
             g_cpu.r[0] = 0;
             break;
@@ -1515,7 +1522,7 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 0;
         break;
     case 10:
-        if (clsid == AEECLSID_DISPLAY_REAL) { /* SetColor */
+        if (is_display_interface(clsid)) { /* SetColor */
             uint32_t index = g_cpu.r[1];
             uint32_t color = g_cpu.r[2];
             uint32_t previous = 0;
@@ -1537,7 +1544,7 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 0;
         break;
     case 13:
-        if (clsid == AEECLSID_DISPLAY_REAL) { /* CreateDIBitmap(po, ppIDIB, depth, width, height) */
+        if (is_display_interface(clsid)) { /* CreateDIBitmap(po, ppIDIB, depth, width, height) */
             uint32_t base = display_find_arg_base();
             uint32_t pp_idib = g_cpu.r[1];
             int width = (int)(g_cpu.r[3] & 0xFFFFu);
@@ -1558,7 +1565,7 @@ void zbrew_handle_stub(uint32_t id) {
             g_cpu.r[0] = 0;
             break;
         }
-        if (clsid == AEECLSID_DISPLAY_REAL) { /* SetDestination(po, pIDIB) */
+        if (is_display_interface(clsid)) { /* SetDestination(po, pIDIB) */
             uint32_t dest = g_cpu.r[1];
             uint32_t dest_clsid = dest ? zmem_read32(dest + 4) : 0;
             if (!dest) {
@@ -1573,14 +1580,14 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 0;
         break;
     case 15:
-        if (clsid == AEECLSID_DISPLAY_REAL) { /* GetDestination */
+        if (is_display_interface(clsid)) { /* GetDestination */
             g_cpu.r[0] = g_display_dest_obj ? g_display_dest_obj : g_device_bitmap;
             break;
         }
         g_cpu.r[0] = 0;
         break;
     case 16:
-        if (clsid == AEECLSID_DISPLAY_REAL) { /* GetDeviceBitmap */
+        if (is_display_interface(clsid)) { /* GetDeviceBitmap */
             if (!g_device_bitmap) {
                 g_device_bitmap = make_stub_interface(ZCLSID_DEVICE_BITMAP);
                 if (g_device_bitmap) {
@@ -1600,7 +1607,7 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 0;
         break;
     case 18:
-        if (clsid == AEECLSID_DISPLAY_REAL) { /* SetClipRect */
+        if (is_display_interface(clsid)) { /* SetClipRect */
             uint32_t p_rect = g_cpu.r[1];
             if (p_rect && zmem_host_ptr(p_rect, 8)) {
                 g_display_clip_x = (int16_t)zmem_read16(p_rect + 0);
@@ -1619,7 +1626,7 @@ void zbrew_handle_stub(uint32_t id) {
         g_cpu.r[0] = 0;
         break;
     case 19:
-        if (clsid == AEECLSID_DISPLAY_REAL) { /* GetClipRect */
+        if (is_display_interface(clsid)) { /* GetClipRect */
             uint32_t p_rect = g_cpu.r[1];
             if (p_rect && zmem_host_ptr(p_rect, 8)) {
                 zmem_write16(p_rect + 0, (uint16_t)g_display_clip_x);
