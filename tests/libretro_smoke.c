@@ -79,6 +79,47 @@ static void input_poll(void) {}
 
 static unsigned input_frame;
 
+#define MAX_INPUT_EVENTS 64
+struct input_event { unsigned frame, hold, id; };
+static struct input_event input_events[MAX_INPUT_EVENTS];
+static unsigned input_event_count;
+
+static unsigned button_id(const char *name)
+{
+    if (!strcmp(name, "START")) return RETRO_DEVICE_ID_JOYPAD_START;
+    if (!strcmp(name, "B")) return RETRO_DEVICE_ID_JOYPAD_B;
+    if (!strcmp(name, "UP")) return RETRO_DEVICE_ID_JOYPAD_UP;
+    if (!strcmp(name, "DOWN")) return RETRO_DEVICE_ID_JOYPAD_DOWN;
+    if (!strcmp(name, "LEFT")) return RETRO_DEVICE_ID_JOYPAD_LEFT;
+    if (!strcmp(name, "RIGHT")) return RETRO_DEVICE_ID_JOYPAD_RIGHT;
+    return RETRO_DEVICE_ID_JOYPAD_A;
+}
+
+/* ZEEMU_SMOKE_INPUT_SCRIPT: frame:button:hold[,frame:button:hold...]. */
+static bool parse_input_script(const char *script)
+{
+    char *copy, *part;
+    if (!script || !*script) return false;
+    copy = (char *)malloc(strlen(script) + 1);
+    if (!copy) return false;
+    strcpy(copy, script);
+    for (part = strtok(copy, ","); part && input_event_count < MAX_INPUT_EVENTS;
+         part = strtok(NULL, ",")) {
+        char name[16];
+        struct input_event *event = &input_events[input_event_count];
+        if (sscanf(part, "%u:%15[^:]:%u", &event->frame, name, &event->hold) != 3 || !event->hold) {
+            fprintf(stderr, "Invalid ZEEMU_SMOKE_INPUT_SCRIPT event: %s\n", part);
+            free(copy);
+            input_event_count = 0;
+            return false;
+        }
+        event->id = button_id(name);
+        input_event_count++;
+    }
+    free(copy);
+    return input_event_count != 0;
+}
+
 /* Simulacao de input pra teste ponta-a-ponta (Tarefa E, Rodada 5):
  * segura o botao configurado via ZEEMU_SMOKE_BUTTON (padrao "A") por
  * ZEEMU_SMOKE_HOLD_FRAMES (padrao 10) a partir de ZEEMU_SMOKE_PRESS_FRAME
@@ -105,23 +146,27 @@ static unsigned smoke_button_id(void) {
 static int16_t input_state(unsigned port, unsigned device,
                            unsigned index, unsigned id)
 {
-    unsigned press, hold;
+    unsigned press, hold, i;
+    bool active = false;
+    static unsigned last_logged = 0xFFFFFFFFu;
     (void)index;
     if (port != 0 || device != RETRO_DEVICE_JOYPAD)
         return 0;
-    press = smoke_press_frame();
-    hold = smoke_hold_frames();
-    if (id == smoke_button_id() &&
-        input_frame >= press && input_frame < press + hold) {
-        static unsigned last_logged = 0xFFFFFFFFu;
-        if (input_frame != last_logged) {
-            fprintf(stderr, "[SMOKE-INPUT] frame=%u segurando botao id=%u\n",
-                    input_frame, id);
-            last_logged = input_frame;
-        }
-        return 1;
+    if (input_event_count) {
+        for (i = 0; i < input_event_count; i++)
+            if (id == input_events[i].id && input_frame >= input_events[i].frame &&
+                input_frame < input_events[i].frame + input_events[i].hold)
+                active = true;
+    } else {
+        press = smoke_press_frame();
+        hold = smoke_hold_frames();
+        active = id == smoke_button_id() && input_frame >= press && input_frame < press + hold;
     }
-    return 0;
+    if (active && input_frame != last_logged) {
+        fprintf(stderr, "[SMOKE-INPUT] frame=%u segurando botao id=%u\n", input_frame, id);
+        last_logged = input_frame;
+    }
+    return active ? 1 : 0;
 }
 
 static void *read_file(const char *path, size_t *size)
@@ -223,6 +268,9 @@ int main(int argc, char **argv)
     }
     if (argc >= 4)
         g_dump_path = argv[3];
+    if (getenv("ZEEMU_SMOKE_INPUT_SCRIPT") &&
+        !parse_input_script(getenv("ZEEMU_SMOKE_INPUT_SCRIPT")))
+        return 2;
 
     core = core_open(argv[1]);
     if (!core) {
