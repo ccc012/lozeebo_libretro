@@ -1555,7 +1555,7 @@ void zboot_tick(uint32_t elapsed_ms) {
                 uint32_t bit, id, uid;
             } map[] = {
                 { ZKEY_A,     0,  0x0106C40Au },
-                { ZKEY_B,     3,  0x0106C40Du },
+                { ZKEY_B,     1,  0x0106C40Bu },
                 { ZKEY_C,     2,  0x0106C40Cu },
                 { ZKEY_MENU,  9,  0x0106C402u },
                 { ZKEY_BACK,  8,  0x0106C403u },
