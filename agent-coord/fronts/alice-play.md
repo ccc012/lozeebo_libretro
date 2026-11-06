@@ -1,23 +1,35 @@
 # Frente: alice-play
 
 **Objetivo:** Alice chegar em `IMedia_Play` após CreateDevice.  
-**Estado:** parked  
-**Owner:** `imedia.c` (+ softfloat/TTDMM se necessário); `boot.c` HID já tem synthetic connect — evitar reeditar  
-**Deps:** HID CreateDevice=1 OK; FP áudio ~489k não regredir
+**Estado:** blocked  
+**Owner:** `imedia.c` (+ caminhos Alice pós-HID); `boot.c` intocado  
+**Deps:** HID CreateDevice=1 OK; FP MP3/restart e AH Play preservados
 
 ## Feito
 
-- `IHID_GetNextConnectEvent` 1 evento sintético
-- `ZINPUT_HID_POS_WORDS` 25→7 (stack Alice)
-- CreateDevice=1; Play=0; host -1 pós-TTDMM
+- `IHID_GetNextConnectEvent` 1 evento sintético (pré-existente).
+- `ZINPUT_HID_POS_WORDS` 25→7 (pré-existente).
+- Build exclusivo `build-smoke-alice-play`: OK.
+- Alice real: CreateDevice=1, SetMediaData=28, Play=0.
+- TTDMM `FALSE / 269` não para execução: asset reads e chamadas GL continuam.
+- FP 600f exit=0 com MP3 + restart; AH 120f exit=0 com Play.
 
-## Falta
+## Bloqueio
 
-1. Diagnóstico TTDMM / softfloat `0xBB***` pós-CD
-2. Caminho asset/heap até Play
-3. Smoke Alice 600f com Play≥1; FP 600f audio~489k
+Alice 600f não conclui em 120 s por loop/lentidão guest pós-assets; sem correção segura em `imedia.c`. Forçar Play seria resultado inventado.
+
+## Próximo
+
+1. Perfilar PCs `0xBB***/0x5F***` com logging reduzido.
+2. Determinar se há progresso de frames ou loop determinístico.
+3. Só alterar caminho de mídia após observar chamada/contrato guest incorreto.
+
+## Evidência
+
+`agent-coord/handoffs/alice-play-20261106.md`
 
 ## NÃO
 
-- `ZEEMU_STUB_THREAD=1` (mata CreateDevice)
-- Fake HandleEvent 2
+- `ZEEMU_STUB_THREAD=1`.
+- Fake `HandleEvent(2)`.
+- Auto-Play em `imedia.c`.

@@ -26,7 +26,7 @@ DLL deploy: SHA256 `638D14381D37C9C12C2C7D21D3813D9D3E5F13CF454F36B1A2F19F1F8D93
 | ID | Objetivo | Branch / WT | Owner | Estado | Deps | Próxima ação |
 |---|---|---|---|---|---|---|
 | `de-load` | HB/Caveman romset load speed (IFile/zip/CUNG) | `front/de-load` → `D:\zeebo-worktrees\de-load` | — | `parked` | boot.c IThread OK | Acelerar I/O; 900f HB+CN |
-| `alice-play` | Alice IMedia_Play pós-CreateDevice | `front/alice-play` | — | `parked` | HID OK; evitar boot.c se outro claim | TTDMM/softfloat pós-HID |
+| `alice-play` | Alice IMedia_Play pós-CreateDevice | `front/alice-play` | — | `blocked` | HID OK; FP/AH preservados | Perfilar loop guest pós-assets; ver handoff |
 | `re4-scene` | RE4 cena/UI pós-pixels ATC | `front/re4-scene` | — | `parked` | egl_gl + idisplay | Visual QA; uploads 512² |
 | `zuma-stable` | Zuma pós-tex2d estabilidade 900f SUMMARY | `front/zuma-stable` | — | `parked` | cpu.c empty-count OK | Smoke limpo + cena |
 | `fp-input` | Family Pack input pós-menu | `front/fp-input` | — | `parked` | áudio ~489k OK | HID/Register path |
