@@ -14,7 +14,7 @@ DLL deploy: SHA256 `638D14381D37C9C12C2C7D21D3813D9D3E5F13CF454F36B1A2F19F1F8D93
 
 | Arquivo | Owner agora | Frente |
 |---|---|---|
-| `src/brew/boot.c` | compartilhado por seções: HID=`fp-input-local`; scheduler=`fp-flow-local` | FP exclusivo |
+| `src/brew/boot.c` | scheduler=`fp-flow-local`; seção HID liberada | FP exclusivo |
 | `src/gpu/egl_gl.c` | — livre (não editar nesta rodada) | — |
 | `src/brew/imedia.c` | — livre | — |
 | `src/brew/idisplay_real.c` | agente FP vídeo | `fp-video-local` |
@@ -33,7 +33,7 @@ DLL deploy: SHA256 `638D14381D37C9C12C2C7D21D3813D9D3E5F13CF454F36B1A2F19F1F8D93
 | `ovos-scene` | Ovos cena reconhecível | `front/ovos-scene` @ `D:\zeebo-worktrees\ovos-scene` | — | `parked` | bitmap unificado | Visual + input |
 | `rea-runtime` | REA runtime Infuse (oracle) | `front/rea-runtime` @ `D:\zeebo-worktrees\rea-runtime` | — | `merged` | contrato `c4fa455` | Configurar GHIDRA_INSTALL_DIR antes de nova análise |
 | `repo-hygiene` | Organizar repo/docs/GitHub | `front/repo-hygiene` @ `D:\zeebo-worktrees\repo-hygiene` | — | `merged-partial` | audit/index/templates integrados | README/.gitignore ficam branch por conflito WIP |
-| `fp-input-local` | Controle/menu/minigame FP | `front/fp-input-local` @ Temp opencode | agente FP input | `active` | seção HID boot.c | Mapear e validar input |
+| `fp-input-local` | Controle/menu/minigame FP | `front/fp-input-local` @ Temp opencode | — | `merged-partial` | B/voltar corrigido | Localizar pacote 277229/data.vfs; validar navegação |
 | `fp-audio-local` | Áudio completo FP | `front/fp-audio-local` @ Temp opencode | — | `merged` | 600/1800f exit 0 | Validar áudio no minigame após input/flow |
 | `fp-video-local` | UI/vídeo completo FP | `front/fp-video-local` @ Temp opencode | agente FP vídeo | `active` | idisplay/bitmap | Validar telas/minigame |
 | `fp-flow-local` | Scheduler/callbacks/navegação FP | `front/fp-flow-local` @ Temp opencode | agente FP flow | `active` | seção scheduler boot.c | Estado guest/menu/minigame |
