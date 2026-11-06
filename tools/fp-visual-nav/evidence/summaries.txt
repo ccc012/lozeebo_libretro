@@ -1,0 +1,2 @@
+[SMOKE-SUMMARY] video_frames=300 video_first=FFFFFFFF video_xor=FFFB5000 video_varied=0 audio_frames=220500 
+[SMOKE-SUMMARY] video_frames=1800 video_first=FFFFFFFF video_xor=FFFB5000 video_varied=0 audio_frames=1323000 
