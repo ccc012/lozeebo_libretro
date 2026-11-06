@@ -216,10 +216,18 @@ static int dest_use_zfb(void)
     return bits == ZMEM_VRAM_BASE;
 }
 
+static int point_in_clip(int x, int y)
+{
+    return s_clip_dx > 0 && s_clip_dy > 0 &&
+           x >= s_clip_x && y >= s_clip_y &&
+           x < s_clip_x + s_clip_dx && y < s_clip_y + s_clip_dy;
+}
+
 static void dest_put_xrgb(int x, int y, uint32_t xrgb)
 {
     uint32_t bits;
     int dw, dh, pitch, bpp;
+    if (!point_in_clip(x, y)) return;
     if (dest_use_zfb()) {
         zfb_set_pixel(x, y, xrgb);
         return;
@@ -246,12 +254,18 @@ static void dest_put_xrgb(int x, int y, uint32_t xrgb)
 static void dest_fill_xrgb(int x, int y, int w, int h, uint32_t xrgb)
 {
     int xx, yy;
+    int x2 = x + w, y2 = y + h;
+    if (x < s_clip_x) x = s_clip_x;
+    if (y < s_clip_y) y = s_clip_y;
+    if (x2 > s_clip_x + s_clip_dx) x2 = s_clip_x + s_clip_dx;
+    if (y2 > s_clip_y + s_clip_dy) y2 = s_clip_y + s_clip_dy;
+    if (x >= x2 || y >= y2) return;
     if (dest_use_zfb()) {
-        zfb_fill_rect(x, y, w, h, xrgb);
+        zfb_fill_rect(x, y, x2 - x, y2 - y, xrgb);
         return;
     }
-    for (yy = y; yy < y + h; yy++)
-        for (xx = x; xx < x + w; xx++)
+    for (yy = y; yy < y2; yy++)
+        for (xx = x; xx < x2; xx++)
             dest_put_xrgb(xx, yy, xrgb);
 }
 
