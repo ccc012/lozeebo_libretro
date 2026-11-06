@@ -15,7 +15,7 @@ DLL deploy: SHA256 `638D14381D37C9C12C2C7D21D3813D9D3E5F13CF454F36B1A2F19F1F8D93
 | Arquivo | Owner agora | Frente |
 |---|---|---|
 | `src/brew/boot.c` | — livre; signal fix integrado | FP exclusivo |
-| `src/gpu/egl_gl.c` | — livre (não editar nesta rodada) | — |
+| `src/gpu/egl_gl.c` | agente FP GLES present | `fp-gles-present-local` |
 | `src/brew/imedia.c` | — livre | — |
 | `src/brew/idisplay_real.c` | — livre | — |
 | `src/cpu/cpu.c` | — livre (não editar nesta rodada) | — |
@@ -39,7 +39,8 @@ DLL deploy: SHA256 `638D14381D37C9C12C2C7D21D3813D9D3E5F13CF454F36B1A2F19F1F8D93
 | `fp-flow-local` | Scheduler/callbacks/navegação FP | `front/fp-flow-local` @ Temp opencode | — | `blocked` | Detach invalida signal | Transferido para `fp-signal-local` |
 | `fp-signal-local` | Lifetime HID signal/callback FP | `front/fp-signal-local` @ Temp opencode | — | `merged` | self-test + 600f completo | Validado |
 | `fp-gameplay-local` | Script multi-input FP | `front/fp-gameplay-local` @ Temp opencode | — | `merged-partial` | 1800f exit 0; branco final | Harness principal preservado; minigame pendente |
-| `fp-visual-nav-local` | Captura temporal e navegação FP | `front/fp-visual-nav-local` @ Temp opencode | agente FP visual | `active` | signal fix + harness dumps | Identificar menu/minigame real |
+| `fp-visual-nav-local` | Captura temporal e navegação FP | `front/fp-visual-nav-local` @ Temp opencode | — | `merged` | loading JadeStone 60–200 | Menu branco pós-f205 → GLES present |
+| `fp-gles-present-local` | Present/blit menu GLES FP | `front/fp-gles-present-local` @ Temp opencode | agente FP GLES | `active` | owner egl_gl + core present | Menu branco→cores reais |
 | `honest69` | Regressão 69 baseline reproduzível | mestre only | mestre | `paused` | foco FP | Retomar após FP jogável |
 | `coord` | Sistema de coordenação | `wip/integration-20261106` | mestre | `active` | — | Integrar somente FP |
 
