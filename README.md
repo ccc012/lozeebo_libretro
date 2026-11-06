@@ -62,7 +62,9 @@ jogue".
 
 ## Status atual
 
-**Marco de 2026-07-11 (rodadas 2/3 de desenvolvimento): os 4 jogos do Tier 1 agora
+> **Atualização de 2026-11-06:** nenhum dos 69 jogos inventariados possui jogabilidade completa comprovada. Há progresso em vídeo, áudio, input e HLE, mas boot, áudio isolado ou framebuffer variável não significam jogo jogável. Consulte o [índice documental](docs/INDEX.md) e a [auditoria do repositório](docs/REPO_AUDIT_20261106.md). A seção abaixo preserva o marco histórico de julho.
+
+**Marco histórico de 2026-07-11 (rodadas 2/3 de desenvolvimento): os 4 jogos do Tier 1 agora
 completam o boot inteiro** — `AEEMod_Load → IModule_CreateInstance → EVT_APP_START →
 "rodando"` — **sem nenhum descarrilamento de CPU**, confirmado por smoke test contra as
 ROMs reais. Nenhum jogo produz frames de *gameplay* ainda (o que aparece na tela vai de
@@ -402,6 +404,8 @@ Da seção "Próximos Passos" de `docs/PROGRESS.md`:
 ---
 
 ## Documentação
+
+O mapa completo, incluindo relatórios históricos e sobreposições preservadas, está em [`docs/INDEX.md`](docs/INDEX.md).
 
 | Arquivo | Conteúdo |
 |---|---|

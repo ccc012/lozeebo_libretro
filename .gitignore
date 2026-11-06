@@ -379,7 +379,7 @@ reference/zeebo_doom-main/
 
 # Build artifacts generated locally
 build/
-build-smoke/
+build-*/
 out/
 x64/
 
