@@ -630,17 +630,34 @@ static uint32_t expand565(uint16_t c)
     return 0xFF000000u | r << 16 | g << 8 | b;
 }
 
-/* ATC color block (8B). Pesos AMD: (5/8,3/8) quando c0>c1; media + preto senao. */
+static uint32_t expand555(uint16_t c)
+{
+    uint32_t r = (c >> 10) & 31u, g = (c >> 5) & 31u, b = c & 31u;
+    r = r << 3 | r >> 2;
+    g = g << 3 | g >> 2;
+    b = b << 3 | b >> 2;
+    return 0xFF000000u | r << 16 | g << 8 | b;
+}
+
+/* ATC color block (8B). Endpoint 0 is RGB555 plus o bit de modo, nao RGB565
+ * nem a ordenacao de endpoints usada por DXT1. */
 static void decode_atc_color_block(uint32_t colors[4], uint32_t src)
 {
     uint16_t c0 = zmem_read16(src);
     uint16_t c1 = zmem_read16(src + 2u);
     uint32_t r0, g0, b0, r1, g1, b1;
-    colors[0] = expand565(c0);
+    colors[0] = expand555((uint16_t)(c0 & 0x7FFFu));
     colors[1] = expand565(c1);
     r0 = (colors[0] >> 16) & 255u; g0 = (colors[0] >> 8) & 255u; b0 = colors[0] & 255u;
     r1 = (colors[1] >> 16) & 255u; g1 = (colors[1] >> 8) & 255u; b1 = colors[1] & 255u;
-    if (c0 > c1) {
+    if (c0 & 0x8000u) {
+        colors[0] = 0xFF000000u;
+        colors[2] = 0xFF000000u | r0 << 16 | g0 << 8 | b0;
+        colors[3] = 0xFF000000u |
+            ((r0 > r1 / 4u ? r0 - r1 / 4u : 0u) << 16) |
+            ((g0 > g1 / 4u ? g0 - g1 / 4u : 0u) << 8) |
+            (b0 > b1 / 4u ? b0 - b1 / 4u : 0u);
+    } else {
         colors[2] = 0xFF000000u |
             (((r0 * 5u + r1 * 3u) >> 3) << 16) |
             (((g0 * 5u + g1 * 3u) >> 3) << 8) |
@@ -649,10 +666,6 @@ static void decode_atc_color_block(uint32_t colors[4], uint32_t src)
             (((r0 * 3u + r1 * 5u) >> 3) << 16) |
             (((g0 * 3u + g1 * 5u) >> 3) << 8) |
             ((b0 * 3u + b1 * 5u) >> 3);
-    } else {
-        colors[2] = 0xFF000000u |
-            (((r0 + r1) >> 1) << 16) | (((g0 + g1) >> 1) << 8) | ((b0 + b1) >> 1);
-        colors[3] = 0xFF000000u; /* preto opaco */
     }
 }
 
