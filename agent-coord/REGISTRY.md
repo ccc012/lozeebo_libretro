@@ -31,7 +31,7 @@ DLL deploy: SHA256 `638D14381D37C9C12C2C7D21D3813D9D3E5F13CF454F36B1A2F19F1F8D93
 | `zuma-stable` | Zuma pós-tex2d estabilidade 900f SUMMARY | `front/zuma-stable` @ `D:\zeebo-worktrees\zuma-stable` | — | `blocked` | aguarda egl_gl livre | Smoke limpo + cena |
 | `fp-input` | Family Pack input pós-menu | `front/fp-input` @ `D:\zeebo-worktrees\fp-input` | — | `parked` | áudio ~489k OK | HID/Register path |
 | `ovos-scene` | Ovos cena reconhecível | `front/ovos-scene` @ `D:\zeebo-worktrees\ovos-scene` | — | `parked` | bitmap unificado | Visual + input |
-| `rea-runtime` | REA runtime Infuse (oracle) | `front/rea-runtime` @ `D:\zeebo-worktrees\rea-runtime` | agente REA | `active` | docs/oracle only | Runtime traces; contrato |
+| `rea-runtime` | REA runtime Infuse (oracle) | `front/rea-runtime` @ `D:\zeebo-worktrees\rea-runtime` | — | `merged` | contrato `c4fa455` | Configurar GHIDRA_INSTALL_DIR antes de nova análise |
 | `honest69` | Regressão 69 baseline reproduzível | mestre only | mestre | `idle` | DLL estável | Rodar após merges |
 | `coord` | Sistema de coordenação | `wip/integration-20261106` @ principal `31e52a6` | mestre | `active` | — | Docs OK; worktrees OK; retomar frentes |
 
