@@ -39,19 +39,43 @@ static bool environment(unsigned command, void *data)
 }
 
 static const char *g_dump_path; /* argv[3]: despeja o ultimo frame (PPM) */
+static unsigned g_video_frames;
+static size_t g_audio_frames;
+static unsigned g_audio_peak;
+static size_t g_audio_nonzero;
+static uint32_t g_video_first;
+static uint32_t g_video_xor;
+static bool g_video_varied;
 
 static void video(const void *data, unsigned width, unsigned height, size_t pitch)
 {
     const uint32_t first_pixel = data ? *(const uint32_t *)data : 0;
-    static unsigned frames;
-    if ((frames++ % 60) == 0)
+    unsigned x, y;
+    g_video_first = first_pixel;
+    g_video_xor = 0;
+    g_video_varied = false;
+    for (y = 0; data && y < height; ++y) {
+        const uint32_t *row = (const uint32_t *)((const uint8_t *)data + y * pitch);
+        for (x = 0; x < width; ++x) {
+            g_video_xor ^= row[x] + x + y * width;
+            if (row[x] != first_pixel) g_video_varied = true;
+        }
+    }
+    if ((g_video_frames++ % 60) == 0)
         fprintf(stderr, "[VIDEO] %ux%u pitch=%zu first=0x%08X\n",
                 width, height, pitch, first_pixel);
     if (g_dump_path && data) {
+        const char *dump_dir = getenv("ZEEMU_SMOKE_DUMP_DIR");
+        char p_file[512];
+        const char *p_target = g_dump_path;
+        if (dump_dir && dump_dir[0]) {
+            _snprintf(p_file, sizeof(p_file), "%s\\frame_%04u.ppm",
+                      dump_dir, g_video_frames - 1);
+            p_target = p_file;
+        }
         /* reescreve a cada frame; o arquivo final = ultimo frame */
-        FILE *f = fopen(g_dump_path, "wb");
+        FILE *f = fopen(p_target, "wb");
         if (f) {
-            unsigned x, y;
             fprintf(f, "P6\n%u %u\n255\n", width, height);
             for (y = 0; y < height; y++) {
                 const uint32_t *row = (const uint32_t *)
@@ -71,7 +95,13 @@ static void video(const void *data, unsigned width, unsigned height, size_t pitc
 
 static size_t audio_batch(const int16_t *data, size_t frames)
 {
-    (void)data;
+    size_t i;
+    g_audio_frames += frames;
+    for (i = 0; data && i < frames * 2; ++i) {
+        unsigned sample = data[i] < 0 ? (unsigned)-(int)data[i] : (unsigned)data[i];
+        if (sample) g_audio_nonzero++;
+        if (sample > g_audio_peak) g_audio_peak = sample;
+    }
     return frames;
 }
 
@@ -102,10 +132,69 @@ static unsigned smoke_button_id(void) {
     return RETRO_DEVICE_ID_JOYPAD_A;
 }
 
+/* Sequencia de input via ZEEMU_SMOKE_SEQ: "UP:1100,A:1130,DOWN:1200:30"
+ * Cada item = BOTAO:FRAME[:HOLD]. Botao segura por HOLD frames (padrao
+ * ZEEMU_SMOKE_HOLD_FRAMES). Permite testar navegacao+selecao num run so. */
+typedef struct {
+    unsigned id;
+    unsigned frame;
+    unsigned hold;
+} smoke_seq_item_t;
+
+static const smoke_seq_item_t *smoke_seq_items(int *count)
+{
+    static smoke_seq_item_t items[32];
+    static int parsed = 0;
+    static int parsed_n = 0;
+    const char *v = getenv("ZEEMU_SMOKE_SEQ");
+    char buf[256];
+    char *tok, *save;
+    int n = 0;
+    if (parsed) {
+        *count = parsed_n;
+        return items;
+    }
+    if (!v) {
+        *count = 0;
+        parsed = 1;
+        parsed_n = 0;
+        return items;
+    }
+    strncpy(buf, v, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = 0;
+    tok = strtok_s(buf, ",", &save);
+    while (tok && n < 32) {
+        char btn[32];
+        unsigned frame = 0, hold = 0;
+        int field = sscanf(tok, "%31[^:]%*[:]%u%*[:]%u", btn, &frame, &hold);
+        if (field >= 2) {
+            unsigned id = RETRO_DEVICE_ID_JOYPAD_A;
+            if (!strcmp(btn, "START")) id = RETRO_DEVICE_ID_JOYPAD_START;
+            else if (!strcmp(btn, "A")) id = RETRO_DEVICE_ID_JOYPAD_A;
+            else if (!strcmp(btn, "B")) id = RETRO_DEVICE_ID_JOYPAD_B;
+            else if (!strcmp(btn, "UP")) id = RETRO_DEVICE_ID_JOYPAD_UP;
+            else if (!strcmp(btn, "DOWN")) id = RETRO_DEVICE_ID_JOYPAD_DOWN;
+            else if (!strcmp(btn, "LEFT")) id = RETRO_DEVICE_ID_JOYPAD_LEFT;
+            else if (!strcmp(btn, "RIGHT")) id = RETRO_DEVICE_ID_JOYPAD_RIGHT;
+            items[n].id = id;
+            items[n].frame = frame;
+            items[n].hold = (field >= 3 && hold) ? hold : smoke_hold_frames();
+            n++;
+        }
+        tok = strtok_s(NULL, ",", &save);
+    }
+    parsed = 1;
+    parsed_n = n;
+    *count = n;
+    return items;
+}
+
 static int16_t input_state(unsigned port, unsigned device,
                            unsigned index, unsigned id)
 {
     unsigned press, hold;
+    int seq_n;
+    const smoke_seq_item_t *seq;
     (void)index;
     if (port != 0 || device != RETRO_DEVICE_JOYPAD)
         return 0;
@@ -120,6 +209,20 @@ static int16_t input_state(unsigned port, unsigned device,
             last_logged = input_frame;
         }
         return 1;
+    }
+    seq = smoke_seq_items(&seq_n);
+    for (int i = 0; i < seq_n; i++) {
+        if (id == seq[i].id &&
+            input_frame >= seq[i].frame &&
+            input_frame < seq[i].frame + seq[i].hold) {
+            static unsigned last_seq_logged = 0xFFFFFFFFu;
+            if (input_frame != last_seq_logged) {
+                fprintf(stderr, "[SMOKE-SEQ] frame=%u segurando id=%u\n",
+                        input_frame, id);
+                last_seq_logged = input_frame;
+            }
+            return 1;
+        }
     }
     return 0;
 }
@@ -267,11 +370,25 @@ int main(int argc, char **argv)
         return 5;
     }
 
-    for (frame = 0; frame < (argc == 5 ? atoi(argv[4]) : 180); ++frame) {
+    for (frame = 0; frame < (argc == 5 ? (unsigned)atoi(argv[4]) : 180u); ++frame) {
         input_frame = frame;
         retro_run();
     }
 
+    fprintf(stderr,
+            "[SMOKE-SUMMARY] video_frames=%u video_first=%08X video_xor=%08X video_varied=%u audio_frames=%zu audio_nonzero=%zu audio_peak=%u\n",
+            g_video_frames, g_video_first, g_video_xor, g_video_varied ? 1u : 0u,
+            g_audio_frames, g_audio_nonzero, g_audio_peak);
+    fflush(stderr);
+    {
+        FILE *af = fopen("smoke_audio_summary.txt", "w");
+        if (af) {
+            fprintf(af,
+                    "video_frames=%u audio_frames=%zu audio_nonzero=%zu audio_peak=%u\n",
+                    g_video_frames, g_audio_frames, g_audio_nonzero, g_audio_peak);
+            fclose(af);
+        }
+    }
     retro_unload_game();
     retro_deinit();
     free(rom_data);
