@@ -38,6 +38,7 @@ DLL deploy: SHA256 `638D14381D37C9C12C2C7D21D3813D9D3E5F13CF454F36B1A2F19F1F8D93
 | `fp-video-local` | UI/vídeo completo FP | `front/fp-video-local` @ Temp opencode | — | `blocked` | fixture sem draw pós-start | Clip candidate `d0d5f34` preservado, não integrado |
 | `fp-flow-local` | Scheduler/callbacks/navegação FP | `front/fp-flow-local` @ Temp opencode | — | `blocked` | Detach invalida signal | Transferido para `fp-signal-local` |
 | `fp-signal-local` | Lifetime HID signal/callback FP | `front/fp-signal-local` @ Temp opencode | — | `merged` | self-test + 600f completo | Validar menu/minigame manual/script avançado |
+| `fp-visual-nav-local` | Sequência temporal frames → menu/minigame | `front/fp-visual-nav-local` @ Temp opencode | — | `done-partial` | boot+loading JadeStone reconhecíveis; 1800f SEQ | Menu GLES pós-f205 branco; present/render |
 | `honest69` | Regressão 69 baseline reproduzível | mestre only | mestre | `paused` | foco FP | Retomar após FP jogável |
 | `coord` | Sistema de coordenação | `wip/integration-20261106` | mestre | `active` | — | Integrar somente FP |
 

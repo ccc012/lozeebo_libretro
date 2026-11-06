@@ -46,6 +46,30 @@ static size_t g_audio_nonzero;
 static uint32_t g_video_first;
 static uint32_t g_video_xor;
 static bool g_video_varied;
+static uint32_t *g_last_fb;
+static unsigned g_last_w, g_last_h;
+static size_t g_last_pitch;
+
+static void dump_ppm(const char *path, const void *data,
+                     unsigned width, unsigned height, size_t pitch)
+{
+    unsigned x, y;
+    FILE *f = fopen(path, "wb");
+    if (!f) return;
+    fprintf(f, "P6\n%u %u\n255\n", width, height);
+    for (y = 0; y < height; y++) {
+        const uint32_t *row = (const uint32_t *)
+            ((const uint8_t *)data + y * pitch);
+        for (x = 0; x < width; x++) {
+            uint8_t rgb[3];
+            rgb[0] = (uint8_t)(row[x] >> 16);
+            rgb[1] = (uint8_t)(row[x] >> 8);
+            rgb[2] = (uint8_t)(row[x]);
+            fwrite(rgb, 1, 3, f);
+        }
+    }
+    fclose(f);
+}
 
 static void video(const void *data, unsigned width, unsigned height, size_t pitch)
 {
@@ -66,29 +90,31 @@ static void video(const void *data, unsigned width, unsigned height, size_t pitc
                 width, height, pitch, first_pixel);
     if (g_dump_path && data) {
         const char *dump_dir = getenv("ZEEMU_SMOKE_DUMP_DIR");
-        char p_file[512];
-        const char *p_target = g_dump_path;
-        if (dump_dir && dump_dir[0]) {
-            _snprintf(p_file, sizeof(p_file), "%s\\frame_%04u.ppm",
-                      dump_dir, g_video_frames - 1);
-            p_target = p_file;
+        unsigned frame_i = g_video_frames - 1;
+        unsigned dump_every = 1;
+        const char *every_v = getenv("ZEEMU_SMOKE_DUMP_EVERY");
+        size_t need;
+        if (every_v && every_v[0]) {
+            dump_every = (unsigned)atoi(every_v);
+            if (dump_every == 0) dump_every = 1;
         }
-        /* reescreve a cada frame; o arquivo final = ultimo frame */
-        FILE *f = fopen(p_target, "wb");
-        if (f) {
-            fprintf(f, "P6\n%u %u\n255\n", width, height);
-            for (y = 0; y < height; y++) {
-                const uint32_t *row = (const uint32_t *)
-                    ((const uint8_t *)data + y * pitch);
-                for (x = 0; x < width; x++) {
-                    uint8_t rgb[3];
-                    rgb[0] = (uint8_t)(row[x] >> 16);
-                    rgb[1] = (uint8_t)(row[x] >> 8);
-                    rgb[2] = (uint8_t)(row[x]);
-                    fwrite(rgb, 1, 3, f);
-                }
-            }
-            fclose(f);
+        /* cache last frame for end-of-run final.ppm (avoid per-frame disk I/O) */
+        need = (size_t)height * pitch;
+        if (!g_last_fb || g_last_w != width || g_last_h != height ||
+            g_last_pitch != pitch) {
+            free(g_last_fb);
+            g_last_fb = (uint32_t *)malloc(need);
+            g_last_w = width;
+            g_last_h = height;
+            g_last_pitch = pitch;
+        }
+        if (g_last_fb)
+            memcpy(g_last_fb, data, need);
+        if (dump_dir && dump_dir[0] && (frame_i % dump_every) == 0) {
+            char p_file[512];
+            _snprintf(p_file, sizeof(p_file), "%s\\frame_%04u.ppm",
+                      dump_dir, frame_i);
+            dump_ppm(p_file, data, width, height, pitch);
         }
     }
 }
@@ -375,6 +401,10 @@ int main(int argc, char **argv)
         retro_run();
     }
 
+    if (g_dump_path && g_last_fb)
+        dump_ppm(g_dump_path, g_last_fb, g_last_w, g_last_h, g_last_pitch);
+    free(g_last_fb);
+    g_last_fb = NULL;
     fprintf(stderr,
             "[SMOKE-SUMMARY] video_frames=%u video_first=%08X video_xor=%08X video_varied=%u audio_frames=%zu audio_nonzero=%zu audio_peak=%u\n",
             g_video_frames, g_video_first, g_video_xor, g_video_varied ? 1u : 0u,
