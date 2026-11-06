@@ -13,7 +13,10 @@ bool zfb_init(void) {
         LOGE("zfb_init: VRAM nao mapeada");
         return false;
     }
-    zfb_clear(0xFF000000u);
+    /* Nao preencher VRAM com 0xFF000000 no init: jogos que usam VRAM
+     * como stack de thread (FC, Zeeboids, Alice) crasham se o stack
+     * estiver cheio de 0xFF000000. Jogos que precisam de tela limpa
+     * chamam zfb_clear() depois. */
     return true;
 }
 

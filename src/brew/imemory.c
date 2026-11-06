@@ -12,6 +12,8 @@ void zbrew_handle_memory(uint32_t id) {
         break;
 
     case ZT_FREE:
+        if (zbrew_ifile_is_live(g_cpu.r[0]))
+            break;
         zheap_free(g_cpu.r[0]);
         break;
 
@@ -23,14 +25,9 @@ void zbrew_handle_memory(uint32_t id) {
         uint32_t dst = g_cpu.r[0];
         uint8_t  val = (uint8_t)g_cpu.r[1];
         uint32_t len = g_cpu.r[2];
-        void *p = zmem_host_ptr(dst, len);
-        if (p) {
-            memset(p, val, len);
-        } else {
-            uint32_t i;
-            for (i = 0; i < len; i++)
-                zmem_write8(dst + i, val);
-        }
+        uint32_t i;
+        for (i = 0; i < len; i++)
+            zmem_write8(dst + i, val);
         break;
     }
 
@@ -38,15 +35,9 @@ void zbrew_handle_memory(uint32_t id) {
         uint32_t dst = g_cpu.r[0];
         uint32_t src = g_cpu.r[1];
         uint32_t len = g_cpu.r[2];
-        void *pd = zmem_host_ptr(dst, len);
-        const void *ps = zmem_host_ptr(src, len);
-        if (pd && ps) {
-            memmove(pd, ps, len);
-        } else {
-            uint32_t i;
-            for (i = 0; i < len; i++)
-                zmem_write8(dst + i, zmem_read8(src + i));
-        }
+        uint32_t i;
+        for (i = 0; i < len; i++)
+            zmem_write8(dst + i, zmem_read8(src + i));
         break;
     }
     }

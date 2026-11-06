@@ -20,6 +20,10 @@
 #define AEECLSID_SOUNDPLAYER_R  0x01002000u
 #define AEECLSID_GRAPHICS_REAL  0x01002001u
 #define AEECLSID_GRAPHICS_BREW  0x0102FB92u
+#define AEECLSID_PNGDECODER_R   0x01030766u /* PNGDecoderBREW: IImageDecoder+IForceFeed */
+#define AEECLSID_JPEGDECODER_R  0x0102FD92u /* decoder irmao (stb_image; PopCap/Zuma) */
+#define AEEIID_IIMAGEDECODER    0x01026E20u
+#define AEEIID_IFORCEFEED       0x0101EB0Bu
 #define AEECLSID_APPLETCTL_REAL 0x01001058u
 #define AEECLSID_SIGNALCBFACT_R 0x01041207u
 #define AEECLSID_MEDIA_REAL     0x01005500u
@@ -51,6 +55,37 @@
 #define AEECLSID_LISTCTL_REAL   0x01003102u
 #define AEECLSID_ICONVIEWCTL_R  0x01003103u
 
+/* ---- Class IDs de fontes (AEECLSID_FONT_*, AEEFont.h) ---- */
+#define AEECLSID_FONT_FIXED4X6   0x0100A001u
+#define AEECLSID_FONT_BASIC6     0x0100A002u
+#define AEECLSID_FONT_BASIC9     0x0100A003u
+#define AEECLSID_FONT_BASIC10    0x0100A004u
+#define AEECLSID_FONT_BASIC11    0x0100A005u
+#define AEECLSID_FONT_BASIC11B   0x0100A006u
+#define AEECLSID_FONT_BASIC14    0x0100A007u
+#define AEECLSID_FONT_BASIC12    0x0100A008u
+#define AEECLSID_FONT_BASIC12B   0x0100A009u
+#define AEECLSID_FONT_BASIC15    0x0100A00Au
+#define AEECLSID_BITFONTFOUNDRY  0x0100A100u
+#define AEECLSID_FONT            0x01001022u
+#define AEECLSID_FONTSYS_NORMAL  0x01012786u
+#define AEECLSID_FONTSYS_LARGE   0x01012787u
+#define AEECLSID_FONTSYS_BOLD    0x01012788u
+#define AEECLSID_FONTSYS_ITALIC  0x0101402Cu
+#define AEECLSID_FONTSYS_BOLDITALIC 0x0101402Du
+#define AEECLSID_FONTSYS_LARGEITALLIC 0x0101402Eu
+#define AEECLSID_FONT_STANDARD11 0x0102F679u
+#define AEECLSID_FONT_STANDARD11B 0x0102F67Au
+#define AEECLSID_FONT_STANDARD18 0x0102F67Bu
+#define AEECLSID_FONT_STANDARD18B 0x0102F67Cu
+#define AEECLSID_FONT_STANDARD23 0x0102F67Du
+#define AEECLSID_FONT_STANDARD23B 0x0102F67Eu
+#define AEECLSID_FONT_STANDARD26 0x0102F67Fu
+#define AEECLSID_FONT_STANDARD26B 0x0102F680u
+#define AEECLSID_FONT_STANDARD36 0x0102F681u
+#define AEECLSID_FONT_STANDARD15 0x01030852u
+#define AEECLSID_FONT_STANDARD15B 0x01030853u
+
 /* ---- Applets conhecidos (CLSID -> jogo) ---- */
 typedef struct {
     uint32_t clsid;
@@ -61,17 +96,64 @@ static const zaee_applet_t ZAEE_KNOWN_APPLETS[] = {
     { 0x010903C6u, "Zeebo Family Pack" },
     { 0x01087B72u, "Pac-Mania" },
     { 0x0102F789u, "Double Dragon" },
-    { 0x01087A3Cu, "Quake" },
     { 0x01087C1Cu, "Quake II" },
+    { 0x01087A3Cu, "Quake" },
     { 0x01070798u, "Z-Wheel" },
-    { 0x01077CF4u, "Z-Wheel (2)" },
     { 0x01072195u, "Zeebo App" },
-    { 0x0108FF07u, "Zeebo Extreme Baja" },
     { 0x0108FF1Au, "Zeeboids" },
-    { 0x00C9B04Bu, "Ultimate Chess 3D" },
+    { 0x01081970u, "Action Hero 3D" },
+    { 0x010A2337u, "Alice no Pais das Maravilhas" },
+    { 0x0108E356u, "Alien Breaker Deluxe" },
+    { 0x01073825u, "Alpine Racer" },
+    { 0x0109DA8Eu, "Armageddon Squadron" },
+    { 0x0109EC1Bu, "Bad Dudes" },
+    { 0x0108C1E1u, "Bejeweled Twist" },
+    { 0x010924DEu, "Caveman Ninja" },
+    { 0x01081984u, "Crash Bandicoot" },
+    { 0x010924DFu, "Dark Seal" },
+    { 0x010940DAu, "Disney All Star Cards" },
+    { 0x01087AE8u, "FIFA 09" },
+    { 0x0108FAB8u, "Galaxy on Fire" },
+    { 0x0109EC1Cu, "Heavy Barrel" },
+    { 0x010978A2u, "Heavy Weapon" },
+    { 0x0109DA8Fu, "Iron Sight" },
+    { 0x010924DDu, "Karnov" },
+    { 0x010924E0u, "Magical Drop III" },
+    { 0x0108C0BCu, "Need For Speed" },
+    { 0x01099CD6u, "Peggle" },
+    { 0x010A1241u, "Powerboat Challenge" },
+    { 0x0108D48Eu, "Prey Evil" },
+    { 0x0109DA90u, "Raging Thunder" },
+    { 0x0108FAB9u, "Rally Master Pro" },
+    { 0x0109DA91u, "Reckless Racing" },
+    { 0x0108AF6Cu, "Resident Evil 4" },
+    { 0x01087B73u, "Ridge Racer" },
+    { 0x010924E1u, "Spin Master" },
+    { 0x010924E2u, "Street Hoop" },
+    { 0x010924E3u, "Super BurgerTime" },
+    { 0x0108D1B7u, "Tekken 2" },
+    { 0x010A6D13u, "Tork and Kral" },
+    { 0x01095146u, "Toy Raid" },
+    { 0x01087A49u, "Treino Cerebral" },
+    { 0x010A2335u, "Turma da Monica" },
+    { 0x010413C3u, "Ultimate Chess 3D" },
+    { 0x010963A5u, "Um Jogo de Ovos" },
+    { 0x010924E4u, "Wizard Fire" },
+    { 0x0109400Bu, "Zeebo Channels" },
+    { 0x0109E4E0u, "Zeebo Clube" },
+    { 0x0108FF07u, "Zeebo Extreme Baja" },
+    { 0x0108FF13u, "Zeebo Extreme Boia Cross" },
+    { 0x0108FF06u, "Zeebo Extreme Corrida Aerea" },
+    { 0x0108FF14u, "Zeebo Extreme Jetboard" },
+    { 0x0108C0BBu, "Zeebo Extreme Rolima" },
+    { 0x0108FF19u, "Zeebo F.C. Foot Camp" },
+    { 0x0108FF17u, "Zeebo F.C. Super League" },
+    { 0x0108FF18u, "Zeebo Sports Peteca" },
+    { 0x0108FF16u, "Zeebo Sports Queimada" },
+    { 0x0108EFF9u, "Zeebo Sports Tenis" },
+    { 0x0108FF15u, "Zeebo Sports Volei" },
     { 0xBF2E2021u, "Zenonia" },
-    { 0x0103D666u, "PrBoom" },
-    { 0x01009FF2u, "TutorI3D" },
+    { 0x0109AF55u, "Zuma" },
 };
 #define ZAEE_KNOWN_APPLET_COUNT \
     (sizeof(ZAEE_KNOWN_APPLETS) / sizeof(ZAEE_KNOWN_APPLETS[0]))

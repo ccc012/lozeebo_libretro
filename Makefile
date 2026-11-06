@@ -1,4 +1,4 @@
-# Makefile - Núcleo Zeebo LibRetro
+# Makefile - Nï¿½cleo Zeebo LibRetro
 # Suporta: Linux, macOS, Windows (MSYS2/MinGW)
 
 TARGET_NAME := zeebo
@@ -31,7 +31,7 @@ ifdef WINDIR
     PLATFORM := windows
 endif
 
-# Se não detectou nada
+# Se nï¿½o detectou nada
 ifeq ($(TARGET),)
     $(error Plataforma nao detectada. Use Linux, macOS ou Windows/MSYS2)
 endif
@@ -65,6 +65,7 @@ SOURCES := \
 	src/brew/idisplay.c \
 	src/brew/idisplay_real.c \
 	src/brew/ifile.c \
+	src/brew/ifont.c \
 	src/brew/imemory.c \
 	src/brew/ishell.c \
 	src/brew/isound.c \

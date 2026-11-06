@@ -24,7 +24,9 @@ typedef struct {
  * path: caminho do arquivo (para achar assets e o .mif ao lado)
  */
 bool zmod_load(const void *data, size_t size, const char *path,
-               zmod_info_t *out);
+                zmod_info_t *out);
+bool zmod_extract_from_zip(const void *zip_data, size_t zip_size,
+                           void **out_data, size_t *out_size, char **out_path);
 
 /* mif_parser.c: extrai o nome do jogo de um .mif ao lado da ROM */
 bool zmif_parse_name(const char *mod_path, char *name_out, size_t maxlen);
@@ -33,8 +35,8 @@ bool zmif_parse_name(const char *mod_path, char *name_out, size_t maxlen);
  * Procura o .mif nas convencoes do dump Zeebo:
  *   <raiz>/mod/<id>/jogo.mod  ->  <raiz>/mif/<id>.mif
  * e tambem jogo.mif ao lado. Escaneia por CLSIDs de applets conhecidos;
- * retorna 0 se nao encontrar. */
-uint32_t zmif_find_applet_clsid(const char *mod_path);
+ * retorna 0 se nao encontrar. data/data_size: buffer do .mod em memoria (fallback). */
+uint32_t zmif_find_applet_clsid(const char *mod_path, const void *data, size_t data_size);
 
 /* bar_parser.c: enumeracao basica de recursos BAR (fase 2.3) */
 bool zbar_probe(const char *bar_path);

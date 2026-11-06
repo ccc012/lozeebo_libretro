@@ -11,7 +11,8 @@
 /* Formatos de sample suportados pelo mixer */
 enum zpcm_format {
     ZPCM_U8   = 0,   /* 8-bit unsigned mono  */
-    ZPCM_S16  = 1    /* 16-bit signed mono (little-endian) */
+    ZPCM_S16  = 1,   /* 16-bit signed mono (little-endian) */
+    ZPCM_ADPCM = 2   /* IMA-ADPCM 4-bit (stereo/interleaved por block) */
 };
 
 void zaudio_init(void);
@@ -24,10 +25,21 @@ void zaudio_reset(void);
  * Retorna id da voz (>=0) ou -1 se sem voz livre. */
 int  zaudio_play_pcm(uint32_t addr, uint32_t bytes, uint32_t rate,
                      enum zpcm_format fmt, bool loop, uint8_t volume);
+/* Igual, mas com numero de canais (1=mono, 2=estereo intercalado). */
+int  zaudio_play_pcm_ch(uint32_t addr, uint32_t bytes, uint32_t rate,
+                        enum zpcm_format fmt, uint8_t channels,
+                        bool loop, uint8_t volume);
 void zaudio_stop(int voice);
 void zaudio_stop_all(void);
 bool zaudio_voice_active(int voice);
 void zaudio_set_volume(int voice, uint8_t volume);
+void zaudio_pause(int voice);
+void zaudio_resume(int voice);
+void zaudio_set_mute(int voice, bool mute);
+bool zaudio_get_mute(int voice);
+void zaudio_set_pan(int voice, int8_t pan); /* -128=left, +127=right, 0=center */
+void zaudio_seek(int voice, uint32_t sample);
+uint32_t zaudio_get_position(int voice);
 
 /* Renderiza 'frames' amostras estereo intercaladas (L,R) no buffer. */
 void zaudio_render(int16_t *out, uint32_t frames);

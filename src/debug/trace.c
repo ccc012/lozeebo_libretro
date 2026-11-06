@@ -1,5 +1,7 @@
 /* trace.c - Ring buffer dos ultimos PCs executados (debug de travas) */
 #include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 #include "log.h"
 
 #define ZTRACE_SIZE 64
@@ -7,11 +9,58 @@
 static uint32_t g_trace[ZTRACE_SIZE];
 static unsigned g_trace_pos = 0;
 
+/* Histograma de paginas (PC>>12): onde o guest passa o tempo. */
+#define ZHIST_BUCKETS 4096
+static uint32_t g_hist[ZHIST_BUCKETS];
+static uint32_t g_hist_done = 0;
+
 void ztrace_pc(uint32_t pc);
 void ztrace_dump(void);
+static void zhist_dump(void);
 
 void ztrace_pc(uint32_t pc) {
     g_trace[g_trace_pos++ & (ZTRACE_SIZE - 1)] = pc;
+    if ((pc & ~0xFFFu) < 0x01000000u)
+        g_hist[(pc >> 12) & (ZHIST_BUCKETS - 1)]++;
+    if (!g_hist_done) {
+        static uint32_t acc = 0;
+        if (++acc < (1u << 22))
+            return;
+        g_hist_done = 1;
+    } else {
+        static uint32_t win = 0;
+        if (++win < (1u << 22))
+            return;
+        win = 0;
+    }
+    zhist_dump();
+    ztrace_dump();
+    memset(g_hist, 0, sizeof(g_hist));
+}
+
+void zhist_dump(void) {
+    int best[12] = { 0 }, i, j;
+    uint32_t bcount[12] = { 0 };
+    for (i = 0; i < ZHIST_BUCKETS; i++) {
+        uint32_t v = g_hist[i];
+        if (!v) continue;
+        for (j = 0; j < 12; j++) {
+            if (v > bcount[j]) {
+                int k;
+                for (k = 11; k > j; k--) {
+                    best[k] = best[k - 1];
+                    bcount[k] = bcount[k - 1];
+                }
+                best[j] = i;
+                bcount[j] = v;
+                break;
+            }
+        }
+    }
+    LOGI("hist: paginas PCs (top 12):");
+    for (i = 0; i < 12; i++)
+        if (bcount[i])
+            LOGI("hist: 0x%07X*: %u", best[i] << 12, bcount[i]);
 }
 
 void ztrace_dump(void) {

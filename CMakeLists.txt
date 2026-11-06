@@ -7,8 +7,12 @@ option(ZEEBO_BUILD_SMOKE_TEST "Build host smoke test" OFF)
 option(ZEEBO_STRICT_WARNINGS "Treat warnings as errors on supported compilers" OFF)
 
 set(ZEEBO_CORE_SOURCES
+    src/audio/adpcm.c
     src/audio/audio.c
+    src/audio/miniz_tinfl.c
+    src/audio/midi.c
     src/audio/mixer.c
+    src/audio/mp3.c
     src/audio/pcm.c
     src/brew/boot.c
     src/brew/brew.c
@@ -17,9 +21,14 @@ set(ZEEBO_CORE_SOURCES
     src/brew/idisplay.c
     src/brew/idisplay_real.c
     src/brew/ifile.c
+    src/brew/ifont.c
+    src/brew/iimage.c
     src/brew/imemory.c
+    src/brew/imedia.c
+    src/brew/imedia_util.c
     src/brew/ishell.c
     src/brew/isound.c
+    src/brew/isource.c
     src/core/libretro_core.c
     src/cpu/cpu.c
     src/cpu/decode.c
@@ -36,6 +45,7 @@ set(ZEEBO_CORE_SOURCES
     src/loader/bar_parser.c
     src/loader/mif_parser.c
     src/loader/mod_loader.c
+    src/loader/zip_extract.c
     src/memory/heap.c
     src/memory/memory.c
 )
@@ -43,7 +53,7 @@ set(ZEEBO_CORE_SOURCES
 add_library(zeebo_libretro SHARED ${ZEEBO_CORE_SOURCES})
 
 set_target_properties(zeebo_libretro PROPERTIES
-    OUTPUT_NAME zeebo_libretro
+    OUTPUT_NAME lozeebo_libretro
     PREFIX ""
     C_STANDARD 99
     C_STANDARD_REQUIRED ON

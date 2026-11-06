@@ -11,8 +11,10 @@
  *    o deslocamento do codigo real (normalmente 0x200): copiamos code+data
  *    desse ponto para VA 0, zeramos o BSS e pulamos o scatter-loader ARMCC.
  *
- * 2. Binario ARM "cru" (Double Dragon, Family Pack, test ROMs):
- *    entry no offset 0 (ou branch inicial), sem header.
+ * 2. Binario ARM "cru" (Double Dragon, Family Pack, ovos, test ROMs):
+ *    entry no offset 0 (ou branch inicial), sem header. Bootstrap PIC ARMCC
+ *    (assinatura em +0x00/+0x14/+0x84..) roda nativo no guest (entry=0x14);
+ *    NAO aplicar reloc HLE estatica — corrompe opcodes (ovos SOLID_FAIL).
  *
  * Em ambos: tabela AEEHelperFuncs gravada nos locais esperados pelo formato.
  * O bootstrap PIC ARMCC cru obtem a tabela em [-4] e a copia sozinho; nele,
@@ -20,12 +22,20 @@
  */
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <ctype.h>
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <dirent.h>
+#endif
 #include "mod_loader.h"
 #include "../memory/memory.h"
 #include "../cpu/cpu.h"
 #include "../brew/brew.h"
 #include "../debug/log.h"
+
+
 
 static uint32_t rd32(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
@@ -50,8 +60,224 @@ static int ci_is_mod_segment(const char *p) {
            p[3] == '/';
 }
 
+/* Tamanho do flat rom (para casar .mod empacotado com nome diferente). */
+static long zmod_file_size(const char *path) {
+    FILE *f = fopen(path, "rb");
+    long n;
+    if (!f) return -1;
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return -1; }
+    n = ftell(f);
+    fclose(f);
+    return n;
+}
+
+/* Score de um id empacotado: sidecars/res > .mod do mesmo tamanho > leaf > qualquer .mod.
+ * Action Hero: 12875/imicro3d.mod vs 274259/a3d.mod+a3dres.res — precisa varrer todos. */
+static int zmod_score_asset_id(const char *assets_root, const char *id,
+                               const char *leaf, long flat_sz, char *out_mod,
+                               size_t out_mod_sz) {
+    char probe[600];
+    int score = 0;
+    static const char *const sidecars[] = {
+        "resources.dat", "resources.bar", "resources.pakz", "resources.pak",
+        "a3dres.res", "string.txt",
+        NULL
+    };
+    int si;
+#if defined(_WIN32)
+    WIN32_FIND_DATAA fd;
+    HANDLE h;
+    char search[600];
+#else
+    DIR *d;
+    struct dirent *de;
+#endif
+
+    if (out_mod && out_mod_sz) out_mod[0] = '\0';
+
+    for (si = 0; sidecars[si]; si++) {
+        snprintf(probe, sizeof(probe), "%s/%s/%s", assets_root, id, sidecars[si]);
+        {
+            FILE *f = fopen(probe, "rb");
+            if (f) {
+                fclose(f);
+                score += (si < 4) ? 100 : 80;
+            }
+        }
+    }
+
+    snprintf(probe, sizeof(probe), "%s/%s/%s", assets_root, id, leaf);
+    {
+        FILE *f = fopen(probe, "rb");
+        if (f) {
+            fclose(f);
+            score += 40;
+            if (out_mod && out_mod_sz) {
+                strncpy(out_mod, leaf, out_mod_sz - 1);
+                out_mod[out_mod_sz - 1] = '\0';
+            }
+        }
+    }
+
+#if defined(_WIN32)
+    snprintf(search, sizeof(search), "%s/%s/*.mod", assets_root, id);
+    h = FindFirstFileA(search, &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            long sz;
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            score += 10;
+            snprintf(probe, sizeof(probe), "%s/%s/%s",
+                     assets_root, id, fd.cFileName);
+            sz = zmod_file_size(probe);
+            if (flat_sz > 0 && sz == flat_sz) {
+                score += 200;
+                if (out_mod && out_mod_sz) {
+                    strncpy(out_mod, fd.cFileName, out_mod_sz - 1);
+                    out_mod[out_mod_sz - 1] = '\0';
+                }
+            } else if (out_mod && out_mod_sz && !out_mod[0]) {
+                strncpy(out_mod, fd.cFileName, out_mod_sz - 1);
+                out_mod[out_mod_sz - 1] = '\0';
+            }
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+#else
+    {
+        char iddir[600];
+        snprintf(iddir, sizeof(iddir), "%s/%s", assets_root, id);
+        d = opendir(iddir);
+        if (d) {
+            while ((de = readdir(d)) != NULL) {
+                size_t n;
+                long sz;
+                if (de->d_name[0] == '.') continue;
+                n = strlen(de->d_name);
+                if (n < 5 || strcmp(de->d_name + n - 4, ".mod") != 0) continue;
+                score += 10;
+                snprintf(probe, sizeof(probe), "%s/%s/%s",
+                         assets_root, id, de->d_name);
+                sz = zmod_file_size(probe);
+                if (flat_sz > 0 && sz == flat_sz) {
+                    score += 200;
+                    if (out_mod && out_mod_sz) {
+                        strncpy(out_mod, de->d_name, out_mod_sz - 1);
+                        out_mod[out_mod_sz - 1] = '\0';
+                    }
+                } else if (out_mod && out_mod_sz && !out_mod[0]) {
+                    strncpy(out_mod, de->d_name, out_mod_sz - 1);
+                    out_mod[out_mod_sz - 1] = '\0';
+                }
+            }
+            closedir(d);
+        }
+    }
+#endif
+    return score;
+}
+
+/* Flat tests/roms/<game>.mod -> tests/assets/<game>/mod/<id>/<file>.mod
+ * quando o dump empacotado existe (resources.dat etc. ao lado do .mod). */
+static int zmod_remap_flat_rom_to_assets(char *full, size_t fullsz) {
+    char *roms, *slash, *dot, *leaf;
+    char game[256], assets_root[512], search[600];
+#if defined(_WIN32)
+    WIN32_FIND_DATAA fd;
+    HANDLE h;
+#else
+    DIR *d;
+    struct dirent *de;
+#endif
+    char found_id[64] = {0};
+    char found_mod[256] = {0};
+    char remapped[600];
+    long flat_sz;
+    int best_score = 0;
+
+    for (roms = full; *roms; ++roms) {
+        if ((roms == full || roms[-1] == '/') &&
+            tolower((unsigned char)roms[0]) == 'r' &&
+            tolower((unsigned char)roms[1]) == 'o' &&
+            tolower((unsigned char)roms[2]) == 'm' &&
+            tolower((unsigned char)roms[3]) == 's' &&
+            roms[4] == '/')
+            break;
+    }
+    if (!*roms) return 0;
+    leaf = roms + 5;
+    if (!*leaf || strchr(leaf, '/')) return 0;
+    dot = strrchr(leaf, '.');
+    if (!dot || dot == leaf) return 0;
+    if ((size_t)(dot - leaf) >= sizeof(game)) return 0;
+    memcpy(game, leaf, (size_t)(dot - leaf));
+    game[dot - leaf] = '\0';
+
+    slash = roms;
+    if ((size_t)(slash - full) + 8 + strlen(game) + 5 >= sizeof(assets_root))
+        return 0;
+    snprintf(assets_root, sizeof(assets_root), "%.*sassets/%s/mod",
+             (int)(slash - full), full, game);
+
+    flat_sz = zmod_file_size(full);
+
+#if defined(_WIN32)
+    snprintf(search, sizeof(search), "%s/*", assets_root);
+    h = FindFirstFileA(search, &fd);
+    if (h == INVALID_HANDLE_VALUE) return 0;
+    do {
+        char cand_mod[256];
+        int sc;
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
+        if (fd.cFileName[0] == '.') continue;
+        if (fd.cFileName[0] < '0' || fd.cFileName[0] > '9') continue;
+        sc = zmod_score_asset_id(assets_root, fd.cFileName, leaf, flat_sz,
+                                 cand_mod, sizeof(cand_mod));
+        if (sc > best_score) {
+            best_score = sc;
+            strncpy(found_id, fd.cFileName, sizeof(found_id) - 1);
+            found_id[sizeof(found_id) - 1] = '\0';
+            strncpy(found_mod, cand_mod, sizeof(found_mod) - 1);
+            found_mod[sizeof(found_mod) - 1] = '\0';
+        }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+#else
+    d = opendir(assets_root);
+    if (!d) return 0;
+    while ((de = readdir(d)) != NULL) {
+        char cand_mod[256];
+        int sc;
+        if (de->d_name[0] == '.') continue;
+        if (de->d_name[0] < '0' || de->d_name[0] > '9') continue;
+        sc = zmod_score_asset_id(assets_root, de->d_name, leaf, flat_sz,
+                                 cand_mod, sizeof(cand_mod));
+        if (sc > best_score) {
+            best_score = sc;
+            strncpy(found_id, de->d_name, sizeof(found_id) - 1);
+            found_id[sizeof(found_id) - 1] = '\0';
+            strncpy(found_mod, cand_mod, sizeof(found_mod) - 1);
+            found_mod[sizeof(found_mod) - 1] = '\0';
+        }
+    }
+    closedir(d);
+#endif
+    if (!found_id[0] || best_score <= 0) return 0;
+    if (!found_mod[0]) {
+        strncpy(found_mod, leaf, sizeof(found_mod) - 1);
+        found_mod[sizeof(found_mod) - 1] = '\0';
+    }
+    snprintf(remapped, sizeof(remapped), "%s/%s/%s",
+             assets_root, found_id, found_mod);
+    if (strlen(remapped) >= fullsz) return 0;
+    strcpy(full, remapped);
+    LOGI("mod: remap flat rom -> app root '%s/%s' (via %s score=%d)",
+         assets_root, found_id, found_mod, best_score);
+    return 1;
+}
+
 static void zmod_set_asset_base_from_path(const char *path) {
-    char full[512];
+    char full[600];
     char *last_sep;
     char *p;
     char *mod_seg = NULL;
@@ -131,7 +357,8 @@ bool zmod_load(const void *data, size_t size, const char *path,
     uint32_t hdr_off = 0;
     bool has_brew_hdr = false;
     bool raw_armcc_bootstrap = false;
-    uint32_t hinted_clsid = path ? zmif_find_applet_clsid(path) : 0;
+    uint32_t hinted_clsid = zmif_find_applet_clsid(path, data, size);
+    char *extracted_path = NULL;
 
     if (!data || size < 8) {
         LOGE("zmod_load: sem dados");
@@ -142,13 +369,21 @@ bool zmod_load(const void *data, size_t size, const char *path,
         return false;
     }
 
-    /* Rejeita containers que nao sao codigo ARM: sem isto, um .zip/.ggz
-     * entregue cru pelo frontend cairia no ramo "mod cru" e seria
-     * executado como codigo em VA 0. */
+    /* ZIP: extrai o primeiro .mod/.bar/.mif valido de dentro do arquivo. */
     if (bytes[0] == 'P' && bytes[1] == 'K' &&
         (bytes[2] == 0x03 || bytes[2] == 0x05 || bytes[2] == 0x07)) {
-        LOGE("zmod_load: arquivo e um ZIP - extraia o .mod de dentro "
-             "(o core nao descompacta; use o browse-archive do RetroArch)");
+        void *extracted = NULL;
+        size_t extracted_size = 0;
+        if (zmod_extract_from_zip(data, size, &extracted, &extracted_size, &extracted_path)) {
+            /* Preserva o caminho externo (ZIP) para inferencia de CLSID por
+             * nome; o nome interno do .mod raramente contem o titulo. */
+            bool ok = zmod_load(extracted, extracted_size,
+                                 path ? path : extracted_path, out);
+            free(extracted);
+            free(extracted_path);
+            return ok;
+        }
+        LOGE("zmod_load: falha ao extrair .mod do ZIP");
         return false;
     }
     if (bytes[0] == 0x1F && bytes[1] == 0x8B) {
@@ -238,7 +473,13 @@ bool zmod_load(const void *data, size_t size, const char *path,
     } else {
         /* binario cru: entry no offset 0 */
         out->entry = 0;
-        if (!hinted_clsid && size >= 4) {
+        if (raw_armcc_bootstrap) {
+            /* Módulos crus com bootstrap ARMCC executam a inicialização nativa no
+             * guest (entry 0x14 via branch inicial). A realocação HLE estática
+             * corrompia opcodes de instrução em jogos como um_jogo_de_ovos e FP. */
+            out->entry = 0x14u;
+            LOGI("mod cru: bootstrap PIC ARMCC detectado -> entry=0x%08X (bootstrap nativo)", out->entry);
+        } else if (!hinted_clsid && size >= 4) {
             uint32_t first = rd32(bytes);
             if (is_arm_branch(first)) {
                 uint32_t target = branch_target(first, 0);
@@ -249,8 +490,6 @@ bool zmod_load(const void *data, size_t size, const char *path,
             }
         }
         LOGI("mod cru: %u bytes, entry=0x%08X", out->code_size, out->entry);
-        if (raw_armcc_bootstrap)
-            LOGI("mod cru: bootstrap PIC ARMCC detectado; preservando literal em +0x10");
     }
 
     /* Nome e diretorio de assets */
@@ -259,13 +498,31 @@ bool zmod_load(const void *data, size_t size, const char *path,
         if (zmif_parse_name(path, name, sizeof(name)))
             strncpy(out->name, name, sizeof(out->name) - 1);
         if (!out->name[0] || strcmp(out->name, "Zeebo Game") == 0) {
-            uint32_t hinted = zmif_find_applet_clsid(path);
+            uint32_t hinted = zmif_find_applet_clsid(path, data, size);
             if (hinted == 0x010903C6u) {
                 strncpy(out->name, "Zeebo Family Pack", sizeof(out->name) - 1);
             }
         }
-        zmod_set_asset_base_from_path(path);
-        zmod_try_probe_packaged_assets(path);
+        {
+            char resolved[600];
+            int remapped;
+            strncpy(resolved, path, sizeof(resolved) - 1);
+            resolved[sizeof(resolved) - 1] = '\0';
+            {
+                char *p;
+                for (p = resolved; *p; ++p)
+                    if (*p == '\\') *p = '/';
+            }
+            remapped = zmod_remap_flat_rom_to_assets(resolved, sizeof(resolved));
+            /* Flat tests/roms/*.mod: base fica em roms/ (data.vfs); app root
+             * (resources.dat) aponta para tests/assets/<game>/mod/<id>/. */
+            if (remapped)
+                zmod_set_asset_base_from_path(path);
+            else
+                zmod_set_asset_base_from_path(resolved);
+            zbrew_set_mod_dir(resolved);
+            zmod_try_probe_packaged_assets(resolved);
+        }
     }
 
     /* CPU: SP no topo, LR provisorio (zboot_start define o resto) */
@@ -276,7 +533,9 @@ bool zmod_load(const void *data, size_t size, const char *path,
     {
         uint32_t table = zbrew_build_helper_table();
         uint32_t slot;
-        if (out->entry >= 8 && !raw_armcc_bootstrap) {
+        /* Bootstrap ARMCC nativo le [-4]/[-8] e copia para +0x98/+0x94.
+         * Nao pre-escrever 0x98/0x94 nem entry-4 (sobrescreveria o bootstrap). */
+        if (!raw_armcc_bootstrap && out->entry >= 8) {
             zmem_write32(out->entry - 4, table);
             zmem_write32(out->entry - 8, 0);
         }
@@ -291,7 +550,7 @@ bool zmod_load(const void *data, size_t size, const char *path,
 
     /* CLSID do applet (MIF ao lado da ROM, ou tabela de conhecidos) */
     {
-        uint32_t clsid = zmif_find_applet_clsid(path);
+        uint32_t clsid = zmif_find_applet_clsid(path, data, size);
         if (!clsid)
             LOGW("zmod_load: CLSID do applet desconhecido - "
                  "CreateInstance recebera 0");

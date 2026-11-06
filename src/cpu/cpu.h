@@ -35,6 +35,7 @@ extern zcpu_t g_cpu;
  * O handler emula a API e deve ajustar o PC (normalmente PC = LR). */
 typedef void (*zcpu_trap_fn)(uint32_t addr);
 void zcpu_set_trap_handler(zcpu_trap_fn fn);
+void zcpu_set_custom_trap(uint32_t id, zcpu_trap_fn fn);
 
 void zcpu_reset(uint32_t entry, uint32_t sp, uint32_t lr);
 void zcpu_step(void);

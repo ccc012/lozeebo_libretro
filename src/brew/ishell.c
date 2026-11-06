@@ -45,10 +45,13 @@ static uint32_t create_by_clsid(uint32_t clsid) {
 
     case AEECLSID_SOUND: {
         static const uint32_t vtbl[] = {
-            ZT_SND_ADDREF, ZT_SND_RELEASE, ZT_SND_PLAY,
-            ZT_SND_STOP, ZT_SND_SETVOLUME
+            ZT_SND_ADDREF, ZT_SND_RELEASE, ZT_SND_REGISTERNOTIFY,
+            ZT_SND_SET, ZT_SND_GET, ZT_SND_SETDEVICE,
+            ZT_SND_PLAYTONE, ZT_SND_PLAYTONELIST, ZT_SND_PLAYFREQTONE,
+            ZT_SND_STOPTONE, ZT_SND_VIBRATE, ZT_SND_STOPVIBRATE,
+            ZT_SND_SETVOLUME, ZT_SND_GETVOLUME, ZT_SND_GETRESOURCECTL
         };
-        return zbrew_make_interface(vtbl, 5, 0);
+        return zbrew_make_interface(vtbl, 15, 0);
     }
     }
     return 0;

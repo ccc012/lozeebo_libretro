@@ -1,40 +1,43 @@
-/* isound.c - ISound: efeitos sonoros PCM via mixer */
+/* isound.c - ISound: efeitos sonoros (stubs compativeis com AEEISound.h) */
 #include "brew.h"
 #include "../cpu/cpu.h"
+#include "../memory/memory.h"
 #include "../audio/audio.h"
 #include "../debug/log.h"
 
 void zbrew_handle_sound(uint32_t id) {
-    switch (id) {
-    case ZT_SND_ADDREF:
-    case ZT_SND_RELEASE:
+    uint32_t slot = id - ZT_SND_ADDREF;
+
+    switch (slot) {
+    case 0: /* AddRef */
+    case 1: /* Release */
         g_cpu.r[0] = 1;
         break;
 
-    case ZT_SND_PLAY: {
-        /* R1=addr R2=bytes R3=rate [SP]=formato [SP+4]=loop */
-        uint32_t addr  = g_cpu.r[1];
-        uint32_t bytes = g_cpu.r[2];
-        uint32_t rate  = g_cpu.r[3];
-        uint32_t fmt   = zbrew_stack_arg(0);
-        uint32_t loop  = zbrew_stack_arg(1);
-        int voice = zaudio_play_pcm(addr, bytes, rate,
-                                    fmt == 1 ? ZPCM_S16 : ZPCM_U8,
-                                    loop != 0, 255);
-        LOGD("ISound_Play(0x%08X, %u bytes, %u Hz) -> voz %d",
-             addr, bytes, rate, voice);
-        g_cpu.r[0] = (uint32_t)voice;
-        break;
-    }
-
-    case ZT_SND_STOP:
-        zaudio_stop((int)g_cpu.r[1]);
-        g_cpu.r[0] = ZBREW_SUCCESS;
+    case 12: /* SetVolume(R1=vol) */
+        /* volume global ignorado (mixer usa volume por voz) */
+        g_cpu.r[0] = 0; /* SUCCESS */
         break;
 
-    case ZT_SND_SETVOLUME:
-        zaudio_set_volume((int)g_cpu.r[1], (uint8_t)g_cpu.r[2]);
-        g_cpu.r[0] = ZBREW_SUCCESS;
+    case 13: /* GetVolume(R1=pVol) */
+        if (g_cpu.r[1] && g_cpu.r[1] < 0x40000000u)
+            zmem_write16(g_cpu.r[1], 255);
+        g_cpu.r[0] = 0;
+        break;
+
+    case 2:  /* RegisterNotify */
+    case 3:  /* Set */
+    case 4:  /* Get */
+    case 5:  /* SetDevice */
+    case 6:  /* PlayTone */
+    case 7:  /* PlayToneList */
+    case 8:  /* PlayFreqTone */
+    case 9:  /* StopTone */
+    case 10: /* Vibrate */
+    case 11: /* StopVibrate */
+    case 14: /* GetResourceCtl */
+    default:
+        g_cpu.r[0] = 0; /* SUCCESS */
         break;
     }
 }

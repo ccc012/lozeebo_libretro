@@ -164,7 +164,8 @@ static void ldst_execute(uint32_t instr) {
     uint32_t addr = pre ? (up ? base + offset : base - offset) : base;
 
     if (load) {
-        uint32_t val = byte ? zmem_read8(addr) : zmem_read32(addr & ~3u);
+        /* ARM11/Zeebo: LDR unaligned = LE byte-wise (nao force align). */
+        uint32_t val = byte ? zmem_read8(addr) : zmem_read32(addr);
         /* write-back antes de escrever Rd (LDR Rd,[Rn]! com Rd==Rn: Rd vence) */
         if (!pre)      rset(rn, up ? base + offset : base - offset);
         else if (wb)   rset(rn, addr);
@@ -174,7 +175,7 @@ static void ldst_execute(uint32_t instr) {
         uint32_t val = rget(rd);
         if (rd == REG_PC) val += 4; /* STR PC guarda pc+12 */
         if (byte) zmem_write8(addr, (uint8_t)val);
-        else      zmem_write32(addr & ~3u, val);
+        else      zmem_write32(addr, val);
         if (!pre)    rset(rn, up ? base + offset : base - offset);
         else if (wb) rset(rn, addr);
     }
@@ -200,30 +201,30 @@ static void ldst_ext_execute(uint32_t instr) {
     if (load) {
         uint32_t val = 0;
         switch (sh) {
-            case 1: val = zmem_read16(addr & ~1u); break;              /* LDRH */
+            case 1: val = zmem_read16(addr); break;              /* LDRH */
             case 2: val = (uint32_t)(int32_t)(int8_t)zmem_read8(addr); break; /* LDRSB */
-            case 3: val = (uint32_t)(int32_t)(int16_t)zmem_read16(addr & ~1u); break; /* LDRSH */
+            case 3: val = (uint32_t)(int32_t)(int16_t)zmem_read16(addr); break; /* LDRSH */
         }
         if (!pre || wb) rset(rn, final_base);
         rset(rd, val);
     } else {
         switch (sh) {
             case 1: /* STRH */
-                zmem_write16(addr & ~1u, (uint16_t)rget(rd));
+                zmem_write16(addr, (uint16_t)rget(rd));
                 if (!pre || wb) rset(rn, final_base);
                 break;
             case 2: /* LDRD (ARMv5TE: L=0, SH=10) */
                 {
-                    uint32_t lo = zmem_read32(addr & ~3u);
-                    uint32_t hi = zmem_read32((addr + 4) & ~3u);
+                    uint32_t lo = zmem_read32(addr);
+                    uint32_t hi = zmem_read32(addr + 4);
                     if (!pre || wb) rset(rn, final_base);
                     rset(rd, lo);
                     rset(rd + 1, hi);
                 }
                 break;
             case 3: /* STRD */
-                zmem_write32(addr & ~3u, rget(rd));
-                zmem_write32((addr + 4) & ~3u, rget(rd + 1));
+                zmem_write32(addr, rget(rd));
+                zmem_write32(addr + 4, rget(rd + 1));
                 if (!pre || wb) rset(rn, final_base);
                 break;
         }
@@ -306,6 +307,16 @@ void zarm_execute(uint32_t instr) {
             LOGW("instrucao incondicional 0x%08X nao implementada (PC=0x%08X)",
                  instr, g_cpu.r[REG_PC] - 8);
             warn_count++;
+        }
+        if (g_cpu.r[REG_PC] >= 0x10003F00u && g_cpu.r[REG_PC] < 0x30000000u) {
+            static uint32_t h = 0;
+            if (h < 1) {
+                h++;
+                LOGI("ARMHEAP pc=0x%08X lr=0x%08X sp=0x%08X r0=0x%08X "
+                     "r1=0x%08X r2=0x%08X r3=0x%08X instr=0x%08X",
+                     g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR], g_cpu.r[REG_SP],
+                     g_cpu.r[0], g_cpu.r[1], g_cpu.r[2], g_cpu.r[3], instr);
+            }
         }
         return;
     }
@@ -401,15 +412,42 @@ void zarm_execute(uint32_t instr) {
         dp_execute(instr);
         return;
 
-    case 2: /* LDR/STR offset imediato */
-    case 3: /* LDR/STR offset registrador */
+    case 2: /* LDR/STR offset imediato (op=3, bit25=1) */
+    case 3: /* LDR/STR offset registrador (op=2, bit25=0) */
         if (op == 3 && BIT(instr, 4)) {
-            /* ARMv6: SXTB/SXTH/UXTB/UXTH (sem acumulacao, Rn=PC).
-             * Alguns modulos ARMCC usam estas instrucoes ja no AEEMod_Load. */
-            if ((instr & 0x0FAF03F0u) == 0x06AF0070u) {
+            if ((instr & 0x0FFF0FF0u) == 0x06BF0F30u) {
+                uint32_t value = rget(instr & 0xFu);
+                int rd = (instr >> 12) & 0xFu;
+                value = ((value & 0x000000FFu) << 24) |
+                        ((value & 0x0000FF00u) << 8) |
+                        ((value & 0x00FF0000u) >> 8) |
+                        ((value & 0xFF000000u) >> 24);
+                rset(rd, value);
+                return;
+            }
+            if ((instr & 0x0FFF0FF0u) == 0x06BF0FB0u) {
+                uint32_t value = rget(instr & 0xFu);
+                int rd = (instr >> 12) & 0xFu;
+                value = ((value & 0x00FF00FFu) << 8) |
+                        ((value & 0xFF00FF00u) >> 8);
+                rset(rd, value);
+                return;
+            }
+            if ((instr & 0x0FFF0FF0u) == 0x06FF0FB0u) {
+                uint32_t value = rget(instr & 0xFu);
+                int rd = (instr >> 12) & 0xFu;
+                value = ((value & 0xFFu) << 8) | ((value >> 8) & 0xFFu);
+                rset(rd, (uint32_t)(int32_t)(int16_t)value);
+                return;
+            }
+            /* ARMv6 extend: SXTB/H UXTB/H (Rn=15) e SXTAB/H UXTAB/H.
+             * bits[11:10]=rot devem ser livres; bits[9:8]==00 (nao 01/10/11
+             * de outras media). Mascara 0x0FA00FF0 exige bits[9:4]=000111. */
+            if ((instr & 0x0FA003F0u) == 0x06A00070u) {
                 uint32_t value = rget(instr & 0xFu);
                 uint32_t rotate = ((instr >> 10) & 3u) * 8u;
                 int rd = (instr >> 12) & 0xFu;
+                int rn = (instr >> 16) & 0xFu;
                 bool is_unsigned = BIT(instr, 22) != 0;
                 bool is_halfword = BIT(instr, 20) != 0;
                 if (rotate)
@@ -423,15 +461,28 @@ void zarm_execute(uint32_t instr) {
                     if (!is_unsigned && (value & 0x80u))
                         value |= 0xFFFFFF00u;
                 }
+                if (rn != 15)
+                    value += rget(rn);
                 rset(rd, value);
                 return;
             }
             static uint32_t warn_count = 0;
             if (warn_count < 16) {
-                LOGW("instrucao de midia/indefinida 0x%08X (PC=0x%08X)",
-                     instr, g_cpu.r[REG_PC] - 8);
+                if (((instr >> 16) & 0xF) == 0xF) {
+                    /* media desconhecida com Rn=15 (formato media real) */
+                    LOGW("instrucao de midia/indefinida 0x%08X (PC=0x%08X)",
+                         instr, g_cpu.r[REG_PC] - 8);
+                } else {
+                    /* LDR/STR imediato legitimo com bit4=1 no offset */
+                    LOGW("LDR/STR imediato w/ bit4 (Rn=%d) 0x%08X (PC=0x%08X)",
+                         (instr >> 16) & 0xF, instr, g_cpu.r[REG_PC] - 8);
+                }
                 warn_count++;
             }
+            if (((instr >> 16) & 0xF) == 0xF)
+                return; /* media nao implementada: NOP */
+            /* senao: LDR/STR imediato real (ex: post-indexado #0x70) */
+            ldst_execute(instr);
             return;
         }
         ldst_execute(instr);

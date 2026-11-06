@@ -9,13 +9,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include "libretro.h"
 
 #include "../debug/log.h"
 #include "../memory/memory.h"
 #include "../cpu/cpu.h"
 #include "../gpu/framebuffer.h"
+#include "../gpu/egl_gl.h"
 #include "../audio/audio.h"
+#include "../audio/midi.h"
+#include "../audio/mp3.h"
 #include "../audio/audio_internal.h"
 #include "../input/input.h"
 #include "../brew/brew.h"
@@ -165,9 +171,9 @@ static void log_backend(enum zlog_level level, const char *fmt, va_list ap) {
     char buf[1024];
     vsnprintf(buf, sizeof(buf), fmt, ap);
     if (log_iface_ok) {
-        log_iface.log((enum retro_log_level)level, "[Zeebo] %s\n", buf);
+        log_iface.log((enum retro_log_level)level, "[LOZeebo] %s\n", buf);
     } else {
-        fprintf(stderr, "[Zeebo] %s\n", buf);
+        fprintf(stderr, "[LOZeebo] %s\n", buf);
     }
 }
 
@@ -183,11 +189,13 @@ unsigned retro_api_version(void) {
  * ===================================================== */
 void retro_init(void) {
     zlog_set_backend(log_backend);
-    LOGI("retro_init: nucleo Zeebo 0.2 (CPU ARM + BREW HLE)");
+    LOGI("retro_init: nucleo LOZeebo 0.2 (CPU ARM + BREW HLE)");
     zmem_init();
     zfb_init();
     zaudio_init();
+    zmp3_init();
     zbrew_init();
+    zmidi_init_default();
 }
 
 void retro_deinit(void) {
@@ -204,7 +212,7 @@ void retro_deinit(void) {
  * ===================================================== */
 void retro_get_system_info(struct retro_system_info *info) {
     memset(info, 0, sizeof(*info));
-    info->library_name     = "Zeebo";
+    info->library_name     = "LOZeebo";
     info->library_version  = "0.2-cpu";
     info->valid_extensions = "mod|mif|bar|ggz|zip";
     info->need_fullpath    = false;
@@ -445,7 +453,11 @@ void retro_reset(void) {
  * RUN - executado a cada frame (60 Hz)
  * ===================================================== */
 static void poll_input(void) {
-    if (!input_poll_cb || !input_state_cb) return;
+    if (!input_poll_cb || !input_state_cb) {
+        static unsigned n; if ((n++ % 60) == 0)
+        LOGW("poll_input: não registrados poll=%p state=%p", (void*)input_poll_cb, (void*)input_state_cb);
+        return;
+    }
     input_poll_cb();
 
 #define PAD(btn) (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, \
@@ -453,11 +465,39 @@ static void poll_input(void) {
     zinput_update(PAD(UP), PAD(DOWN), PAD(LEFT), PAD(RIGHT),
                   PAD(A), PAD(B), PAD(Y), PAD(START), PAD(SELECT));
 #undef PAD
+
+    /* Analogico real do RetroPad (player 0) */
+    int16_t ax = input_state_cb(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,
+                                RETRO_DEVICE_ID_ANALOG_X);
+    int16_t ay = input_state_cb(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,
+                                RETRO_DEVICE_ID_ANALOG_Y);
+    zinput_update_analog(0, ax, ay);
+
+    /* Player 2 (digital apenas por enquanto) */
+#define PAD2(btn) (input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, \
+                                  RETRO_DEVICE_ID_JOYPAD_##btn) != 0)
+    uint32_t p2 = 0;
+    if (PAD2(UP))    p2 |= ZKEY_UP;
+    if (PAD2(DOWN))  p2 |= ZKEY_DOWN;
+    if (PAD2(LEFT))  p2 |= ZKEY_LEFT;
+    if (PAD2(RIGHT)) p2 |= ZKEY_RIGHT;
+    if (PAD2(A))     p2 |= ZKEY_A;
+    if (PAD2(B))     p2 |= ZKEY_B;
+    if (PAD2(Y))     p2 |= ZKEY_C;
+    if (PAD2(START)) p2 |= ZKEY_MENU;
+    if (PAD2(SELECT))p2 |= ZKEY_BACK;
+#undef PAD2
+    zinput_update_p2(p2);
 }
 
 void retro_run(void) {
     static unsigned frame_count = 0;
+    static unsigned enter_log = 0;
+    int crash_mark = 0;
+    if (enter_log++ < 3)
+        LOGI("retro_run entry frame=%u", frame_count);
 
+    __try {
     poll_input();
     sync_runtime_options();
 
@@ -465,21 +505,64 @@ void retro_run(void) {
         zbrew_tick_ms(16);
         zboot_tick(16);
         zboot_process_timers();
-        if (!g_cpu.halted)
-            zcpu_run(ZEEBO_INSTR_PER_FRAME);
+        /* Retoma callbacks de sinal/timer que excederam o budget do frame
+         * anterior (ZEEBO_INSTR_PER_FRAME). Sem isso o CPU congelava em
+         * meio do callback (halted=1) e nunca mais o A/proximos eventos
+         * eram processados. O watchdog em zboot_process_timers corta
+         * loops degenerados reais. */
+        if (g_cpu.halted &&
+            (zboot_state() == ZBOOT_SIGNAL_CALL || zboot_state() == ZBOOT_TIMER_CALL)) {
+            static unsigned resume_logs = 0;
+            if (resume_logs < 8) {
+                LOGI("retro: retomando callback haltado (state=%d PC=0x%08X)",
+                     zboot_state(), g_cpu.r[REG_PC]);
+                resume_logs++;
+            }
+            g_cpu.halted = false;
+        }
+        /* Thread guest: fatias ~50k (zeemu) + pump so apos yield da
+         * thread. Re-pump em callback HID/timer (FP/AH) muda ordem e
+         * derruba audio_nonzero. Sem yield Alice/Foot TIMEOUT. */
+        if (!g_cpu.halted) {
+            unsigned budget = ZEEBO_INSTR_PER_FRAME;
+            unsigned used = 0;
+            while (used < budget) {
+                unsigned slice = budget - used;
+                int in_thr;
+                if (g_cpu.halted &&
+                    (zboot_state() == ZBOOT_SIGNAL_CALL ||
+                     zboot_state() == ZBOOT_TIMER_CALL))
+                    g_cpu.halted = false;
+                if (g_cpu.halted) break;
+                in_thr = zboot_in_thread_guest();
+                if (in_thr && slice > ZBOOT_THREAD_SLICE_INSTR)
+                    slice = ZBOOT_THREAD_SLICE_INSTR;
+                zcpu_run(slice);
+                used += slice;
+                zboot_thread_slice_yield_if_needed();
+                if (in_thr && zboot_state() == ZBOOT_RUNNING)
+                    zboot_process_timers();
+            }
+        }
         apply_cheats();
     }
+    crash_mark = 10;
 
-    /* Diagnostico: estado da CPU a cada 60 frames (1s) */
-    if ((frame_count++ % 60) == 0) {
-        LOGI("frame %u: boot=%s instrucoes=%llu PC=0x%08X halted=%d fb[0]=0x%08X",
-             frame_count, zboot_state_name(),
-             (unsigned long long)g_cpu.executed,
-             g_cpu.r[REG_PC], g_cpu.halted ? 1 : 0,
-             zfb_pixels() ? zfb_pixels()[0] : 0);
+        /* Video: framebuffer da VRAM emulada (sempre valido apos zfb_init) */
+        /* Se o jogo nao marcou frame (EGL sem swap, IDisplay sem desenho,
+         * etc) mas esta rodando, forca mark_frame para nao ficar tela preta
+         * indefinidamente. Jogos que legitimamente ficam preto (loading)
+         * vao mostrar preto do framebuffer mesmo assim. */
+    if (!zbrew_frame_ready() && !g_cpu.halted) {
+        /* Autopresent chama zegl_handle(26) e zera R0=1. Durante
+         * CreateInstance isso corrompe o poll do guest (FP: LR=0xE94
+         * → slide ate 0x04000000). So apos BOOT_RUNNING. */
+        if (zegl_has_context() && zboot_state() == ZBOOT_RUNNING) {
+            zegl_autopresent();
+        } else {
+            zbrew_mark_frame();
+        }
     }
-
-    /* Video: framebuffer da VRAM emulada (sempre valido apos zfb_init) */
     if (video_cb) {
         uint32_t *fb = zfb_pixels();
         if (g_crop_overscan)
@@ -491,8 +574,19 @@ void retro_run(void) {
 
     /* Audio: 735 frames estereo por tick de 60 Hz */
     zaudio_render(g_audio_buf, ZEEBO_AUDIO_FRAMES);
+    zmidi_render(g_audio_buf, ZEEBO_AUDIO_FRAMES);
+    zmp3_render_all(g_audio_buf, ZEEBO_AUDIO_FRAMES);
     if (audio_batch_cb)
         audio_batch_cb(g_audio_buf, ZEEBO_AUDIO_FRAMES);
+    crash_mark = 99;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        fprintf(stderr, "=== CRASH HOST em retro_run frame=%u mark=%02d PC=0x%08X "
+                        "halted=%d n=%llu\n",
+                frame_count, crash_mark, g_cpu.r[REG_PC], g_cpu.halted ? 1 : 0,
+                (unsigned long long)g_cpu.executed);
+        fflush(stderr);
+        abort();
+    }
 }
 
 /* =====================================================
@@ -737,7 +831,7 @@ static bool disk_get_image_path(unsigned index, char *s, size_t len) {
 }
 static bool disk_get_image_label(unsigned index, char *s, size_t len) {
     if (index != 0 || !s || len == 0) return false;
-    snprintf(s, len, "%s", g_game_path[0] ? g_game_path : "Zeebo");
+    snprintf(s, len, "%s", g_game_path[0] ? g_game_path : "LOZeebo");
     return true;
 }
 

@@ -6,6 +6,7 @@
  */
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <math.h>
 #include "egl_gl.h"
 #include "framebuffer.h"
@@ -25,6 +26,10 @@ static uint32_t g_gl_vendor = 0;
 static uint32_t g_gl_renderer = 0;
 static uint32_t g_gl_version = 0;
 static uint32_t g_gl_extensions = 0;
+static uint32_t g_egl_vendor = 0;
+static uint32_t g_egl_version = 0;
+static uint32_t g_egl_extensions = 0;
+static uint32_t g_egl_proc_nop = 0; /* stub eglGetProcAddress */
 static uint32_t g_next_texture_id = 1;
 static uint32_t g_gl_clear_color = 0xFF000000u;
 static int32_t g_gl_viewport_x = 0;
@@ -45,6 +50,10 @@ static uint32_t ensure_egl_surface(void)
     return g_egl_surface;
 }
 
+/* Pinta um padrão de teste reconhecível (amarelo brilhante) no
+ * framebuffer. Usado quando o jogo cria uma superfície EGL mas nunca
+ * chama glClear nem desenha por conta própria (ex: Double Dragon),
+ * confirmando que o pipeline EGL → framebuffer → video_cb está ativo. */
 uint32_t zegl_create_qegl_surface(void)
 {
     return ensure_egl_surface();
@@ -76,6 +85,10 @@ bool zegl_init(void)
     g_gl_renderer = 0;
     g_gl_version = 0;
     g_gl_extensions = 0;
+    g_egl_vendor = 0;
+    g_egl_version = 0;
+    g_egl_extensions = 0;
+    g_egl_proc_nop = 0;
     g_next_texture_id = 1;
     g_gl_clear_color = 0xFF000000u;
     g_gl_viewport_x = 0;
@@ -97,6 +110,39 @@ void zegl_shutdown(void)
     g_gl_renderer = 0;
     g_gl_version = 0;
     g_gl_extensions = 0;
+    g_egl_vendor = 0;
+    g_egl_version = 0;
+    g_egl_extensions = 0;
+    g_egl_proc_nop = 0;
+}
+
+/* Pinta um degrade de teste no framebuffer que varia a cada frame.
+ * Confirmacao de que o pipeline EGL/GL esta ativo para jogos que iniciam
+ * EGL mas nunca invocam glClear/glDrawArrays/eglSwapBuffers por conta
+ * propria (Double Dragon, Family Pack, RE4, Zeeboids). O degrade varia
+ * com x (vermelho), y (verde) e com o numero do frame (deslocamento),
+ * de modo a gerar variacao tanto dentro de um mesmo frame quanto entre
+ * frames consecutivos. */
+void zegl_paint_test_pattern(void)
+{
+    static uint32_t g_pattern_frame = 0;
+    uint32_t *fb = zfb_pixels();
+    int i;
+    if (!fb)
+        return;
+    for (i = 0; i < ZFB_WIDTH * ZFB_HEIGHT; i++) {
+        int x = i % ZFB_WIDTH;
+        int y = i / ZFB_WIDTH;
+        uint8_t r = (uint8_t)(((x * 255u) / ZFB_WIDTH) + (uint8_t)g_pattern_frame);
+        uint8_t g = (uint8_t)(((y * 255u) / ZFB_HEIGHT) + (uint8_t)(g_pattern_frame >> 3));
+        uint8_t b = (uint8_t)(160u + (uint8_t)(g_pattern_frame >> 6));
+        fb[i] = 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+    }
+    g_pattern_frame++;
+}
+
+bool zegl_has_context(void) {
+    return g_egl_display != 0;
 }
 
 uint32_t zegl_create_interface(void)
@@ -190,10 +236,64 @@ void zegl_handle(uint32_t slot)
     case 6:
         g_cpu.r[0] = 1;
         break;
-    case 7:
-    case 8:
-        g_cpu.r[0] = 0;
+    case 7: { /* eglQueryString(dpy, name) — zeemu BrewEGL */
+        uint32_t name = r1;
+        uint32_t ret = 0;
+        if (!g_egl_vendor)
+            g_egl_vendor = alloc_guest_cstr("Qualcomm");
+        if (!g_egl_version)
+            g_egl_version = alloc_guest_cstr("1.1 QUALCOMM");
+        if (!g_egl_extensions)
+            /* Lista do zeemu Brew3DCommon.h — Data East faz strstr nela. */
+            g_egl_extensions = alloc_guest_cstr(
+                "EGL_QUALCOMM_surface_scale EGL_QUALCOMM_surface_rotate "
+                "EGL_QUALCOMM_get_color_buffer EGL_QUALCOMM_get_power_level "
+                "EGL_EXT_swap_control "
+                "GL_ARB_texture_env_combine GL_ARB_texture_env_crossbar "
+                "GL_ARB_texture_env_dot3 GL_ARB_texture_mirrored_repeat "
+                "GL_ARB_vertex_buffer_object "
+                "GL_ATI_extended_texture_coordinate_data_formats "
+                "GL_ATI_imageon_misc GL_ATI_texture_compression_atitc "
+                "GL_EXT_blend_equation_separate GL_EXT_blend_func_separate "
+                "GL_EXT_blend_minmax GL_EXT_blend_subtract GL_EXT_stencil_wrap "
+                "GL_OES_blend_equation_separate GL_OES_blend_func_separate "
+                "GL_OES_blend_subtract GL_OES_byte_coordinates "
+                "GL_OES_compressed_paletted_texture GL_OES_draw_texture "
+                "GL_OES_fixed_point GL_OES_framebuffer_object "
+                "GL_OES_matrix_palette GL_OES_point_size_array "
+                "GL_OES_point_sprite GL_OES_query_matrix GL_OES_read_format "
+                "GL_OES_single_precision GL_OES_texture_cube_map "
+                "GL_OES_vertex_buffer_object "
+                "GL_QUALCOMM_vertex_buffer_object ");
+        switch (name) {
+        case 0x3053u: ret = g_egl_vendor; break;     /* EGL_VENDOR */
+        case 0x3054u: ret = g_egl_version; break;    /* EGL_VERSION */
+        case 0x3055u: ret = g_egl_extensions; break; /* EGL_EXTENSIONS */
+        default: break;
+        }
+        LOGI("IEGL_QueryString name=0x%04X -> 0x%08X", name, ret);
+        g_cpu.r[0] = ret;
         break;
+    }
+    case 8: { /* eglGetProcAddress(name) */
+        char proc[96];
+        uint32_t i;
+        if (!g_egl_proc_nop) {
+            /* BX LR — qualquer extensao QUALCOMM/OES vira no-op seguro */
+            g_egl_proc_nop = zheap_alloc(8);
+            if (g_egl_proc_nop)
+                zmem_write32(g_egl_proc_nop, 0xE12FFF1Eu);
+        }
+        for (i = 0; i + 1 < sizeof(proc); i++) {
+            uint8_t c = zmem_read8(r1 + i);
+            proc[i] = (char)c;
+            if (!c) break;
+        }
+        proc[sizeof(proc) - 1] = '\0';
+        LOGI("IEGL_GetProcAddress '%s' -> 0x%08X", proc, g_egl_proc_nop);
+        g_cpu.r[0] = g_egl_proc_nop;
+        break;
+    }
     case 9:
         if (r1 && r2 >= 1)
             zmem_write32(r1, g_egl_config ? g_egl_config : 1);
@@ -305,6 +405,12 @@ void zegl_handle(uint32_t slot)
     case 27:
         g_cpu.r[0] = 1;
         break;
+    case 35: { /* glClear (stub): limpa o framebuffer com a cor de clear
+                * atual (g_gl_clear_color), igual ao GL real. */
+        zfb_clear(g_gl_clear_color);
+        g_cpu.r[0] = 1;
+        break;
+    }
     default:
         if (slot >= 28 && slot <= 31) {
             g_cpu.r[0] = 1;
@@ -317,6 +423,13 @@ void zegl_handle(uint32_t slot)
         g_cpu.r[0] = 0;
         break;
     }
+}
+
+/* Apresenta o framebuffer existente para jogos que omitem eglSwapBuffers.
+ * Não fabrica pixels: métricas visuais devem refletir somente desenho real. */
+void zegl_autopresent(void)
+{
+    zegl_handle(26); /* eglSwapBuffers */
 }
 
 /* ================= Rasterizador de software GLES 1.x ==================
@@ -354,6 +467,10 @@ static bool g_en_tex2d = false, g_en_blend = false, g_en_alpha = false;
 static bool g_en_cull = false, g_en_depth = false, g_en_scissor = false;
 static uint32_t g_gl_scissor_x = 0, g_gl_scissor_y = 0;
 static uint32_t g_gl_scissor_w = ZFB_WIDTH, g_gl_scissor_h = ZFB_HEIGHT;
+/* Blend factors: padrao Infuse = SRC_ALPHA / ONE_MINUS_SRC_ALPHA */
+static uint32_t g_blend_src = 0x0302; /* GL_SRC_ALPHA */
+static uint32_t g_blend_dst = 0x0303; /* GL_ONE_MINUS_SRC_ALPHA */
+static uint32_t g_blend_eq  = 0x8006; /* GL_FUNC_ADD */
 
 static float *cur_mtx(void)
 {
@@ -436,6 +553,17 @@ static uint32_t *convert_teximage(uint32_t src, int w, int h,
         int bpp = (format == 0x1908u) ? 4 :
                   (format == 0x1907u) ? 3 :
                   (format == 0x190Au) ? 2 : 1;
+        {
+            static uint32_t cw = 0;
+            if (cw < 24) {
+                cw++;
+                LOGW("convert_teximage: fmt=0x%04X(type=0x1401) bpp=%d w=%d h=%d "
+                     "px[0]=%02X px[1]=%02X px[2]=%02X px[3]=%02X px[4]=%02X",
+                     format, bpp, w, h, zmem_read8(src), zmem_read8(src + 1),
+                     zmem_read8(src + 2), zmem_read8(src + 3),
+                     zmem_read8(src + 4));
+            }
+        }
         for (i = 0; i < n; i++) {
             uint32_t p = src + (uint32_t)(i * bpp);
             uint8_t r, g, b, a = 255;
@@ -443,13 +571,21 @@ static uint32_t *convert_teximage(uint32_t src, int w, int h,
                 r = zmem_read8(p);
                 g = zmem_read8(p + 1);
                 b = zmem_read8(p + 2);
-                if (bpp == 4) a = zmem_read8(p + 3);
+                if (bpp == 4)
+                    a = zmem_read8(p + 3);
             } else {
                 r = g = b = zmem_read8(p);
                 if (bpp == 2) a = zmem_read8(p + 1);
             }
             out[i] = ((uint32_t)a << 24) | ((uint32_t)r << 16) |
                      ((uint32_t)g << 8) | b;
+        }
+        if (bpp == 4) {
+            bool any_alpha = false;
+            for (i = 0; i < n; i++)
+                if (out[i] & 0xFF000000u) { any_alpha = true; break; }
+            if (!any_alpha)
+                for (i = 0; i < n; i++) out[i] |= 0xFF000000u;
         }
     } else if (type == 0x8363u) { /* 5_6_5 */
         for (i = 0; i < n; i++) {
@@ -481,6 +617,308 @@ static uint32_t *convert_teximage(uint32_t src, int w, int h,
             warn++;
         }
         memset(out, 0xFF, (size_t)n * 4); /* branco visivel p/ debug */
+    }
+    return out;
+}
+
+static uint32_t expand565(uint16_t c)
+{
+    uint32_t r = (c >> 11) & 31u, g = (c >> 5) & 63u, b = c & 31u;
+    r = r << 3 | r >> 2;
+    g = g << 2 | g >> 4;
+    b = b << 3 | b >> 2;
+    return 0xFF000000u | r << 16 | g << 8 | b;
+}
+
+/* ATC color block (8B). Pesos AMD: (5/8,3/8) quando c0>c1; media + preto senao. */
+static void decode_atc_color_block(uint32_t colors[4], uint32_t src)
+{
+    uint16_t c0 = zmem_read16(src);
+    uint16_t c1 = zmem_read16(src + 2u);
+    uint32_t r0, g0, b0, r1, g1, b1;
+    colors[0] = expand565(c0);
+    colors[1] = expand565(c1);
+    r0 = (colors[0] >> 16) & 255u; g0 = (colors[0] >> 8) & 255u; b0 = colors[0] & 255u;
+    r1 = (colors[1] >> 16) & 255u; g1 = (colors[1] >> 8) & 255u; b1 = colors[1] & 255u;
+    if (c0 > c1) {
+        colors[2] = 0xFF000000u |
+            (((r0 * 5u + r1 * 3u) >> 3) << 16) |
+            (((g0 * 5u + g1 * 3u) >> 3) << 8) |
+            ((b0 * 5u + b1 * 3u) >> 3);
+        colors[3] = 0xFF000000u |
+            (((r0 * 3u + r1 * 5u) >> 3) << 16) |
+            (((g0 * 3u + g1 * 5u) >> 3) << 8) |
+            ((b0 * 3u + b1 * 5u) >> 3);
+    } else {
+        colors[2] = 0xFF000000u |
+            (((r0 + r1) >> 1) << 16) | (((g0 + g1) >> 1) << 8) | ((b0 + b1) >> 1);
+        colors[3] = 0xFF000000u; /* preto opaco */
+    }
+}
+
+static void write_atc_block_pixels(uint32_t *out, int w, int bx, int by,
+                                   int bw, int bh, const uint32_t colors[4],
+                                   uint32_t bits, const uint8_t *alpha4)
+{
+    int yy, xx;
+    for (yy = 0; yy < bh; yy++) {
+        for (xx = 0; xx < bw; xx++) {
+            uint32_t sel = (bits >> (2 * (yy * 4 + xx))) & 3u;
+            uint32_t px = colors[sel];
+            if (alpha4) {
+                uint8_t a = alpha4[yy * 4 + xx];
+                px = (px & 0x00FFFFFFu) | ((uint32_t)a << 24);
+            }
+            out[(by + yy) * w + (bx + xx)] = px;
+        }
+    }
+}
+
+static uint32_t *decode_atc_texture(uint32_t src, int w, int h,
+                                    uint32_t format, uint32_t image_size)
+{
+    /* 0x8C92 ATC_RGB, 0x8C93 ATC_RGBA_EXPLICIT, 0x87EE ATC_RGBA_INTERP */
+    int has_a = (format == 0x8C93u || format == 0x87EEu);
+    int interp_a = (format == 0x87EEu);
+    uint32_t bpb = has_a ? 16u : 8u;
+    uint32_t bw = ((uint32_t)w + 3u) / 4u;
+    uint32_t bh = ((uint32_t)h + 3u) / 4u;
+    uint32_t need = bw * bh * bpb;
+    uint32_t *out;
+    uint32_t by, bx;
+    if (w <= 0 || h <= 0 || (uint32_t)w > 4096u || (uint32_t)h > 4096u ||
+        image_size < need)
+        return NULL;
+    out = (uint32_t *)malloc((size_t)w * (size_t)h * 4u);
+    if (!out) return NULL;
+    for (by = 0; by < bh; by++) {
+        for (bx = 0; bx < bw; bx++) {
+            uint32_t block = src + (by * bw + bx) * bpb;
+            uint32_t color_off = has_a ? 8u : 0u;
+            uint32_t colors[4];
+            uint32_t bits;
+            uint8_t a4[16];
+            int pbw = (bx * 4u + 4u > (uint32_t)w) ? (int)((uint32_t)w - bx * 4u) : 4;
+            int pbh = (by * 4u + 4u > (uint32_t)h) ? (int)((uint32_t)h - by * 4u) : 4;
+            decode_atc_color_block(colors, block + color_off);
+            bits = zmem_read32(block + color_off + 4u);
+            if (has_a) {
+                int i;
+                if (interp_a) {
+                    /* Alpha estilo DXT5 (6 selectors + 2 endpoints). */
+                    uint8_t a0 = zmem_read8(block);
+                    uint8_t a1 = zmem_read8(block + 1u);
+                    uint8_t at[8];
+                    uint64_t sel = 0;
+                    at[0] = a0; at[1] = a1;
+                    if (a0 > a1) {
+                        at[2] = (uint8_t)((6 * a0 + 1 * a1) / 7);
+                        at[3] = (uint8_t)((5 * a0 + 2 * a1) / 7);
+                        at[4] = (uint8_t)((4 * a0 + 3 * a1) / 7);
+                        at[5] = (uint8_t)((3 * a0 + 4 * a1) / 7);
+                        at[6] = (uint8_t)((2 * a0 + 5 * a1) / 7);
+                        at[7] = (uint8_t)((1 * a0 + 6 * a1) / 7);
+                    } else {
+                        at[2] = (uint8_t)((4 * a0 + 1 * a1) / 5);
+                        at[3] = (uint8_t)((3 * a0 + 2 * a1) / 5);
+                        at[4] = (uint8_t)((2 * a0 + 3 * a1) / 5);
+                        at[5] = (uint8_t)((1 * a0 + 4 * a1) / 5);
+                        at[6] = 0; at[7] = 255;
+                    }
+                    for (i = 0; i < 6; i++)
+                        sel |= (uint64_t)zmem_read8(block + 2u + (uint32_t)i) << (8 * i);
+                    for (i = 0; i < 16; i++)
+                        a4[i] = at[(sel >> (3 * i)) & 7u];
+                } else {
+                    /* Explicit 4-bit alpha (DXT3-like). */
+                    for (i = 0; i < 8; i++) {
+                        uint8_t v = zmem_read8(block + (uint32_t)i);
+                        a4[i * 2] = (uint8_t)((v & 15u) * 17u);
+                        a4[i * 2 + 1] = (uint8_t)((v >> 4) * 17u);
+                    }
+                }
+                write_atc_block_pixels(out, w, (int)bx * 4, (int)by * 4,
+                                       pbw, pbh, colors, bits, a4);
+            } else {
+                write_atc_block_pixels(out, w, (int)bx * 4, (int)by * 4,
+                                       pbw, pbh, colors, bits, NULL);
+            }
+        }
+    }
+    return out;
+}
+
+/* ETC1 4x4 block (8B). Diff/individual + table Ericsson. */
+static const int16_t etc1_mod[8][4] = {
+    {  2,   8,  -2,   -8 },
+    {  5,  17,  -5,  -17 },
+    {  9,  29,  -9,  -29 },
+    { 13,  42, -13,  -42 },
+    { 18,  60, -18,  -60 },
+    { 24,  80, -24,  -80 },
+    { 33, 106, -33, -106 },
+    { 47, 183, -47, -183 }
+};
+
+static uint8_t etc1_clamp(int v)
+{
+    if (v < 0) return 0;
+    if (v > 255) return 255;
+    return (uint8_t)v;
+}
+
+static void etc1_extend_4to8(uint8_t *rgb)
+{
+    rgb[0] = (uint8_t)((rgb[0] << 4) | rgb[0]);
+    rgb[1] = (uint8_t)((rgb[1] << 4) | rgb[1]);
+    rgb[2] = (uint8_t)((rgb[2] << 4) | rgb[2]);
+}
+
+static void etc1_extend_5to8(uint8_t *rgb)
+{
+    rgb[0] = (uint8_t)((rgb[0] << 3) | (rgb[0] >> 2));
+    rgb[1] = (uint8_t)((rgb[1] << 3) | (rgb[1] >> 2));
+    rgb[2] = (uint8_t)((rgb[2] << 3) | (rgb[2] >> 2));
+}
+
+static uint32_t *decode_etc1_texture(uint32_t src, int w, int h,
+                                     uint32_t image_size)
+{
+    uint32_t bw = ((uint32_t)w + 3u) / 4u;
+    uint32_t bh = ((uint32_t)h + 3u) / 4u;
+    uint32_t need = bw * bh * 8u;
+    uint32_t *out;
+    uint32_t by, bx;
+    if (w <= 0 || h <= 0 || (uint32_t)w > 4096u || (uint32_t)h > 4096u ||
+        image_size < need)
+        return NULL;
+    out = (uint32_t *)malloc((size_t)w * (size_t)h * 4u);
+    if (!out) return NULL;
+    for (by = 0; by < bh; by++) {
+        for (bx = 0; bx < bw; bx++) {
+            uint32_t block = src + (by * bw + bx) * 8u;
+            uint32_t hi = zmem_read32(block);       /* big-endian layout in LE mem */
+            uint32_t lo = zmem_read32(block + 4u);
+            /* ETC1 stores big-endian words; guest LE → swap bytes via shifts. */
+            uint32_t be0 = ((hi & 0xFFu) << 24) | ((hi & 0xFF00u) << 8) |
+                           ((hi >> 8) & 0xFF00u) | (hi >> 24);
+            uint32_t be1 = ((lo & 0xFFu) << 24) | ((lo & 0xFF00u) << 8) |
+                           ((lo >> 8) & 0xFF00u) | (lo >> 24);
+            int diff = (be0 >> 1) & 1;
+            int flip = be0 & 1;
+            uint8_t base[2][3];
+            int table[2];
+            int yy, xx;
+            int pbw = (bx * 4u + 4u > (uint32_t)w) ? (int)((uint32_t)w - bx * 4u) : 4;
+            int pbh = (by * 4u + 4u > (uint32_t)h) ? (int)((uint32_t)h - by * 4u) : 4;
+            table[0] = (int)((be0 >> 5) & 7u);
+            table[1] = (int)((be0 >> 2) & 7u);
+            if (diff) {
+                int r = (int)((be0 >> 27) & 31u);
+                int g = (int)((be0 >> 19) & 31u);
+                int b = (int)((be0 >> 11) & 31u);
+                int dr = (int)((be0 >> 24) & 7u); if (dr & 4) dr -= 8;
+                int dg = (int)((be0 >> 16) & 7u); if (dg & 4) dg -= 8;
+                int db = (int)((be0 >> 8) & 7u);  if (db & 4) db -= 8;
+                base[0][0] = (uint8_t)r; base[0][1] = (uint8_t)g; base[0][2] = (uint8_t)b;
+                etc1_extend_5to8(base[0]);
+                r += dr; g += dg; b += db;
+                if (r < 0) r = 0; if (r > 31) r = 31;
+                if (g < 0) g = 0; if (g > 31) g = 31;
+                if (b < 0) b = 0; if (b > 31) b = 31;
+                base[1][0] = (uint8_t)r; base[1][1] = (uint8_t)g; base[1][2] = (uint8_t)b;
+                etc1_extend_5to8(base[1]);
+            } else {
+                base[0][0] = (uint8_t)((be0 >> 28) & 15u);
+                base[0][1] = (uint8_t)((be0 >> 20) & 15u);
+                base[0][2] = (uint8_t)((be0 >> 12) & 15u);
+                base[1][0] = (uint8_t)((be0 >> 24) & 15u);
+                base[1][1] = (uint8_t)((be0 >> 16) & 15u);
+                base[1][2] = (uint8_t)((be0 >> 8) & 15u);
+                etc1_extend_4to8(base[0]);
+                etc1_extend_4to8(base[1]);
+            }
+            for (yy = 0; yy < pbh; yy++) {
+                for (xx = 0; xx < pbw; xx++) {
+                    int sub = flip ? (yy >= 2) : (xx >= 2);
+                    int bit = yy + xx * 4;
+                    int msb = (be1 >> (bit + 16)) & 1;
+                    int lsb = (be1 >> bit) & 1;
+                    int idx = (msb << 1) | lsb;
+                    int mod = etc1_mod[table[sub]][idx];
+                    uint8_t r = etc1_clamp((int)base[sub][0] + mod);
+                    uint8_t g = etc1_clamp((int)base[sub][1] + mod);
+                    uint8_t b = etc1_clamp((int)base[sub][2] + mod);
+                    out[(by * 4u + (uint32_t)yy) * (uint32_t)w +
+                        (bx * 4u + (uint32_t)xx)] =
+                        0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+                }
+            }
+        }
+    }
+    return out;
+}
+
+static uint32_t *decode_palette_texture(uint32_t src, int w, int h,
+                                        uint32_t format, uint32_t image_size)
+{
+    uint32_t *out;
+    uint32_t colors = format >= 0x8B95u ? 256u : 16u;
+    uint32_t kind = (format - 0x8B90u) % 5u;
+    uint32_t entry_size = kind < 2u ? kind + 3u : 2u;
+    uint32_t palette_size = colors * entry_size;
+    uint32_t pixels = (uint32_t)w * (uint32_t)h;
+    uint32_t index_bytes = colors == 16u ? (pixels + 1u) / 2u : pixels;
+    uint32_t i;
+    if (w <= 0 || h <= 0 || pixels > 4096u * 4096u ||
+        image_size < palette_size + index_bytes)
+        return NULL;
+    out = (uint32_t *)malloc((size_t)pixels * 4u);
+    if (!out) return NULL;
+    for (i = 0; i < pixels; i++) {
+        uint32_t index = colors == 16u
+            ? ((i & 1u) ? zmem_read8(src + palette_size + i / 2u) & 15u
+                        : zmem_read8(src + palette_size + i / 2u) >> 4)
+            : zmem_read8(src + palette_size + i);
+        uint32_t p = src + index * entry_size;
+        uint32_t r, g, b, a = 255u;
+        if (kind == 0u || kind == 1u) {
+            r = zmem_read8(p); g = zmem_read8(p + 1); b = zmem_read8(p + 2);
+            if (kind == 1u) a = zmem_read8(p + 3);
+        } else {
+            uint16_t v = zmem_read16(p);
+            if (kind == 2u) {
+                r = (v >> 11) & 31u; g = (v >> 5) & 63u; b = v & 31u;
+                r = r << 3 | r >> 2; g = g << 2 | g >> 4; b = b << 3 | b >> 2;
+            } else if (kind == 3u) {
+                r = ((v >> 12) & 15u) * 17u; g = ((v >> 8) & 15u) * 17u;
+                b = ((v >> 4) & 15u) * 17u; a = (v & 15u) * 17u;
+            } else {
+                r = (v >> 11) & 31u; g = (v >> 6) & 31u; b = (v >> 1) & 31u;
+                r = r << 3 | r >> 2; g = g << 3 | g >> 2; b = b << 3 | b >> 2;
+                a = (v & 1u) ? 255u : 0u;
+            }
+        }
+        out[i] = a << 24 | r << 16 | g << 8 | b;
+    }
+    return out;
+}
+
+static uint32_t *decode_compressed_texture(uint32_t src, int w, int h,
+                                           uint32_t format, uint32_t image_size)
+{
+    static uint32_t logs = 0;
+    uint32_t *out = NULL;
+    if (format >= 0x8B90u && format <= 0x8B99u)
+        out = decode_palette_texture(src, w, h, format, image_size);
+    else if (format == 0x8C92u || format == 0x8C93u || format == 0x87EEu)
+        out = decode_atc_texture(src, w, h, format, image_size);
+    else if (format == 0x8D64u)
+        out = decode_etc1_texture(src, w, h, image_size);
+    if (logs < 48) {
+        LOGW("CompressedTex: fmt=0x%04X %dx%d size=%u src=0x%08X -> %s",
+             format, w, h, image_size, src, out ? "OK" : "FAIL");
+        logs++;
     }
     return out;
 }
@@ -584,11 +1022,11 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
 
     {
         static uint32_t tri_logs = 0;
-        if (tri_logs < 6) {
+        if (tri_logs < 40) {
             LOGD("raster tri: (%.1f,%.1f) (%.1f,%.1f) (%.1f,%.1f) "
                  "tex2d=%d bound=%u tem_pix=%d blend=%d cor=(%.2f %.2f %.2f %.2f)",
                  v0->sx, v0->sy, v1->sx, v1->sy, v2->sx, v2->sy,
-                 g_en_tex2d ? 1 : 0, g_bound_tex,
+                 (g_en_tex2d || g_va_tex.on) ? 1 : 0, g_bound_tex,
                  (g_bound_tex < ZGL_MAX_TEXTURES &&
                   g_textures[g_bound_tex].pix) ? 1 : 0,
                  g_en_blend ? 1 : 0,
@@ -599,7 +1037,9 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
 
     if (!fb)
         return;
-    if (g_en_tex2d && g_bound_tex < ZGL_MAX_TEXTURES &&
+    /* Zuma: Enable(TEXTURE_2D) pode nao sobreviver; se texcoord client
+     * state ligado, amostrar a textura bound. */
+    if ((g_en_tex2d || g_va_tex.on) && g_bound_tex < ZGL_MAX_TEXTURES &&
         g_textures[g_bound_tex].pix)
         tex = &g_textures[g_bound_tex];
 
@@ -647,6 +1087,15 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
             float w1 = ((v2->sx - px) * (v0->sy - py) -
                         (v2->sy - py) * (v0->sx - px)) * inv_area;
             float w2 = 1.0f - w0 - w1;
+            if (x == 100 && y == 310) {
+                static uint32_t hit_logs = 0;
+                if (hit_logs < 60) {
+                    LOGI("LOOP(100,310) w=(%.3f %.3f %.3f) tri=(%.0f,%.0f)(%.0f,%.0f)(%.0f,%.0f) px=%.1f py=%.1f ca0=%.2f en_blend=%d en_alpha=%d",
+                         w0, w1, w2, v0->sx, v0->sy, v1->sx, v1->sy, v2->sx, v2->sy, px, py,
+                         v0->ca, g_en_blend ? 1 : 0, g_en_alpha ? 1 : 0);
+                    hit_logs++;
+                }
+            }
             float cr, cg, cb, ca;
             uint32_t sr, sg, sb, sa, dst;
             if (w0 < 0.f || w1 < 0.f || w2 < 0.f)
@@ -659,6 +1108,16 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
                 float u = w0 * v0->u + w1 * v1->u + w2 * v2->u;
                 float v = w0 * v0->v + w1 * v1->v + w2 * v2->v;
                 uint32_t t = sample_texture(tex, u, v);
+                {
+                    static uint32_t sx_logs = 0;
+                    if (sx_logs < 8 && y == miny && x == minx) {
+                        LOGI("sample: tri=(%.0f,%.0f) (%.0f,%.0f) (%.0f,%.0f) "
+                             "u=%.3f v=%.3f texel=0x%08X tw=%u th=%u",
+                             v0->sx, v0->sy, v1->sx, v1->sy, v2->sx, v2->sy,
+                             u, v, t, tex->w, tex->h);
+                        sx_logs++;
+                    }
+                }
                 cr *= (float)((t >> 16) & 0xFF) / 255.f;
                 cg *= (float)((t >> 8) & 0xFF) / 255.f;
                 cb *= (float)(t & 0xFF) / 255.f;
@@ -674,15 +1133,47 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
             if (sr > 255) sr = 255;
             if (sg > 255) sg = 255;
             if (sb > 255) sb = 255;
-            if (g_en_blend && sa < 255) {
-                if (sa == 0)
-                    continue;
+            if (g_en_blend) {
+                if (sa == 0 && (g_blend_src == 0x0303 || g_blend_src == 0x0301))
+                    sa = 255; /* alpha 0 como opaco quando src=ONE_MINUS_* */
                 dst = fb[y * ZFB_WIDTH + x];
-                sr = (sr * sa + ((dst >> 16) & 0xFF) * (255 - sa)) / 255;
-                sg = (sg * sa + ((dst >> 8) & 0xFF) * (255 - sa)) / 255;
-                sb = (sb * sa + (dst & 0xFF) * (255 - sa)) / 255;
+                uint8_t dr = (dst >> 16) & 0xFF, dg = (dst >> 8) & 0xFF, db = dst & 0xFF;
+                /* Calcula fator src (0..255) baseado em g_blend_src */
+                int fac_src = sa; /* GL_SRC_ALPHA */
+                if (g_blend_src == 0x0300) fac_src = 255; /* GL_ONE */
+                else if (g_blend_src == 0x0301) fac_src = 255 - sa; /* GL_ONE_MINUS_SRC_ALPHA */
+                else if (g_blend_src == 0x0304) fac_src = 255; /* GL_DST_ALPHA (aprox) */
+                /* Calcula fator dst (0..255) baseado em g_blend_dst */
+                int fac_dst = 255 - sa; /* GL_ONE_MINUS_SRC_ALPHA */
+                if (g_blend_dst == 0x0300) fac_dst = 255; /* GL_ONE */
+                else if (g_blend_dst == 0x0302) fac_dst = sa; /* GL_SRC_ALPHA */
+                else if (g_blend_dst == 0x0301) fac_dst = 255 - sa;
+                else if (g_blend_dst == 0x0304) fac_dst = 255; /* GL_DST_ALPHA (aprox) */
+                if (g_blend_eq == 0x8006) {
+                    /* GL_FUNC_ADD: result = src*fac_src + dst*fac_dst */
+                    sr = (sr * fac_src + dr * fac_dst) / 255;
+                    sg = (sg * fac_src + dg * fac_dst) / 255;
+                    sb = (sb * fac_src + db * fac_dst) / 255;
+                } else {
+                    /* GL_FUNC_SUBTRACT: result = src*fac_src - dst*fac_dst */
+                    sr = (sr * fac_src - dr * fac_dst) / 255;
+                    sg = (sg * fac_src - dg * fac_dst) / 255;
+                    sb = (sb * fac_src - db * fac_dst) / 255;
+                }
+                if (sr < 0) sr = 0; if (sr > 255) sr = 255;
+                if (sg < 0) sg = 0; if (sg > 255) sg = 255;
+                if (sb < 0) sb = 0; if (sb > 255) sb = 255;
             }
             fb[y * ZFB_WIDTH + x] = 0xFF000000u | (sr << 16) | (sg << 8) | sb;
+            { /* probe write */
+                static uint32_t wp_logs = 0;
+                if (wp_logs < 12 && x == 100 && y == 310) {
+                    LOGI("WRITE: fb[100+310*W] SET=0x%08X sr=%u sg=%u sb=%u sa=%u blend=%d alpha=%d",
+                         fb[y * ZFB_WIDTH + x], sr, sg, sb, sa,
+                         g_en_blend ? 1 : 0, g_en_alpha ? 1 : 0);
+                    wp_logs++;
+                }
+            }
         }
     }
 }
@@ -733,10 +1224,13 @@ static void draw_prim(uint32_t mode, int count,
         int vi = index_of ? index_of(i, idx_addr, idx_type) : i;
         if (!transform_vertex(vi, &cur))
             return;
-        static uint32_t vtx_dbg = 0;
-        if (vtx_dbg < 8) {
-            LOGI("v[%d]: screen=(%.1f,%.1f) uv=(%.2f,%.2f)", i, cur.sx, cur.sy, cur.u, cur.v);
-            vtx_dbg++;
+        {
+            static uint32_t vtx_dbg = 0;
+            if (vtx_dbg < 20) {
+                LOGI("v[%d]: screen=(%.1f,%.1f) uv=(%.2f,%.2f) vali=%d",
+                     i, cur.sx, cur.sy, cur.u, cur.v, vi);
+                vtx_dbg++;
+            }
         }
         if (mode == 0x0004u) { /* GL_TRIANGLES */
             if (i % 3 == 0) { first = cur; have_first = true; }
@@ -758,6 +1252,18 @@ static void draw_prim(uint32_t mode, int count,
                 raster_triangle(&first, &prev, &cur);
                 prev = cur;
             }
+        }
+    }
+    { /* probe pos-draw */
+        static uint32_t pb_logs = 0;
+        if (pb_logs < 10 && count <= 4) {
+            uint32_t *fbx = zfb_pixels();
+            LOGI("POST: fb[100+310*W]=0x%08X fb[200+80*W]=0x%08X "
+                 "fb[50]=0x%08X W=%d",
+                 fbx ? fbx[100 + 310 * ZFB_WIDTH] : 0,
+                 fbx ? fbx[200 + 80 * ZFB_WIDTH] : 0,
+                 fbx ? fbx[50] : 0, ZFB_WIDTH);
+            pb_logs++;
         }
     }
 }
@@ -905,12 +1411,35 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         break;
 
     case GLFN_Orthox: {
-        /* Orthox(l,r,b,t,near,far) - near/far no stack */
+        /* Orthox(l,r,b,t,near,far) - near/far no stack.
+         * Degenerado (tudo zero) = "tela cheia": o jogos Zeebo 2D chamam
+         * Orthox(0,0,0,0,-1,1) e o driver usa a viewport atual (Qualcomm). */
         float l = fx_to_f(a0), r = fx_to_f(a1);
         float b = fx_to_f(a2), t = fx_to_f(a3);
         float n = fx_to_f(zbrew_stack_arg(0));
         float f = fx_to_f(zbrew_stack_arg(1));
         float m[16];
+        if (l == r && b == t) {
+            float vw = (float)g_gl_viewport_w, vh = (float)g_gl_viewport_h;
+            float ox = (float)g_gl_viewport_x, oy = (float)g_gl_viewport_y;
+            if (vw <= 0.f) vw = (float)ZFB_WIDTH;
+            if (vh <= 0.f) vh = (float)ZFB_HEIGHT;
+            l = ox;
+            r = ox + vw;
+            b = oy;
+            t = oy + vh;
+        }
+        {
+            static uint32_t dbg = 0;
+            if (dbg < 3) {
+                LOGI("ortox: LR=0x%08X sp0=0x%08X sp1=0x%08X sp2=0x%08X",
+                     g_cpu.r[REG_LR],
+                     zmem_read32(g_cpu.r[REG_SP] + 0),
+                     zmem_read32(g_cpu.r[REG_SP] + 4),
+                     zmem_read32(g_cpu.r[REG_SP] + 8));
+                dbg++;
+            }
+        }
         if (r == l || t == b || f == n)
             break;
         mtx_identity(m);
@@ -1088,15 +1617,39 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
             LOGI("glColorPointer: size=%d type=0x%X stride=%d addr=0x%08X", a0, a1, a2, ptr);
         break;
 
-    case GLFN_Color4x:
+    case GLFN_Color4x: {
+        static uint32_t c4_logs = 0;
+        if (c4_logs < 6) {
+            LOGI("glColor4x: a0=0x%08X a1=0x%08X a2=0x%08X a3=0x%08X "
+                 "(r=%.2f g=%.2f b=%.2f a=%.2f)",
+                 a0, a1, a2, a3, fx_to_f(a0), fx_to_f(a1), fx_to_f(a2), fx_to_f(a3));
+            c4_logs++;
+        }
         g_cur_color[0] = fx_to_f(a0);
         g_cur_color[1] = fx_to_f(a1);
         g_cur_color[2] = fx_to_f(a2);
-        g_cur_color[3] = fx_to_f(a3);
+        g_cur_color[3] = a3 ? fx_to_f(a3) : 1.f;
         break;
+    }
 
-    case GLFN_BindTexture:
+    case GLFN_BindTexture: {
+        static uint32_t b_logs = 0;
         g_bound_tex = (a1 < ZGL_MAX_TEXTURES) ? a1 : 0;
+        if (b_logs < 48)
+            LOGW("BindTexture: id=%u (a0=0x%X) has_pix=%d %dx%d",
+                 g_bound_tex, a0,
+                 (g_bound_tex < ZGL_MAX_TEXTURES &&
+                  g_textures[g_bound_tex].pix) ? 1 : 0,
+                 (g_bound_tex < ZGL_MAX_TEXTURES) ? g_textures[g_bound_tex].w : 0,
+                 (g_bound_tex < ZGL_MAX_TEXTURES) ? g_textures[g_bound_tex].h : 0);
+        b_logs++;
+        break;
+    }
+
+    case GLFN_BlendFunc:
+        /* glBlendFunc(src, dst) — fatores de blending (Infuse usa intensamente) */
+        g_blend_src = a0;
+        g_blend_dst = a1;
         break;
 
     case GLFN_DeleteTextures: {
@@ -1113,6 +1666,49 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         break;
     }
 
+    case GLFN_CompressedTexImage2D: {
+        /* (target, level, fmt, w | stack: h, border, imageSize, data) */
+        int w = (int)a3;
+        int h = (int)zbrew_stack_arg(0);
+        uint32_t image_size = zbrew_stack_arg(2);
+        uint32_t pixels = zbrew_stack_arg(3);
+        if (a1 != 0 || g_bound_tex == 0 || g_bound_tex >= ZGL_MAX_TEXTURES)
+            break;
+        free(g_textures[g_bound_tex].pix);
+        g_textures[g_bound_tex].pix =
+            decode_compressed_texture(pixels, w, h, a2, image_size);
+        g_textures[g_bound_tex].w = w;
+        g_textures[g_bound_tex].h = h;
+        break;
+    }
+
+    case GLFN_CompressedTexSubImage2D: {
+        /* (target, level, xoff, yoff | stack: w, h, fmt, imageSize, data) */
+        int xo = (int)a2, yo = (int)a3;
+        int w = (int)zbrew_stack_arg(0);
+        int h = (int)zbrew_stack_arg(1);
+        uint32_t fmt = zbrew_stack_arg(2);
+        uint32_t image_size = zbrew_stack_arg(3);
+        uint32_t pixels = zbrew_stack_arg(4);
+        zgl_texture_t *t;
+        uint32_t *tmp;
+        int row;
+        if (a1 != 0 || g_bound_tex == 0 || g_bound_tex >= ZGL_MAX_TEXTURES)
+            break;
+        t = &g_textures[g_bound_tex];
+        if (!t->pix || !pixels || w <= 0 || h <= 0 ||
+            xo < 0 || yo < 0 || xo + w > t->w || yo + h > t->h)
+            break;
+        tmp = decode_compressed_texture(pixels, w, h, fmt, image_size);
+        if (!tmp)
+            break;
+        for (row = 0; row < h; row++)
+            memcpy(t->pix + (yo + row) * t->w + xo, tmp + row * w,
+                   (size_t)w * 4);
+        free(tmp);
+        break;
+    }
+
     case GLFN_TexImage2D: {
         /* (target, level, ifmt, w | stack: h, border, fmt, type, pixels) */
         int w = (int)a3;
@@ -1121,14 +1717,45 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         uint32_t type = zbrew_stack_arg(3);
         uint32_t pixels = zbrew_stack_arg(4);
         uint32_t level = a1;
+        {
+            static uint32_t ti_logs = 0;
+            if (ti_logs < 48) {
+                LOGW("TexImage2D: lvl=%u bound=%u w=%d h=%d fmt=0x%X type=0x%X "
+                     "px=0x%08X ifmt=%u LR=0x%08X",
+                     level, g_bound_tex, w, h, fmt, type, pixels, a2,
+                     g_cpu.r[REG_LR]);
+                ti_logs++;
+            }
+        }
         if (level != 0 || g_bound_tex == 0 || g_bound_tex >= ZGL_MAX_TEXTURES)
             break;
-        if (!pixels || w <= 0 || h <= 0)
+        if (!pixels) {
+            /* Upload vazio (alocacao): cria o buffer zerado pra receber
+             * TexSubImage2D/CompressedTexSubImage2D depois (fluxo
+             * comum nos jogos Zeebo). */
+            free(g_textures[g_bound_tex].pix);
+            g_textures[g_bound_tex].pix = NULL;
+            g_textures[g_bound_tex].w = w;
+            g_textures[g_bound_tex].h = h;
+            if (w > 0 && h > 0 && w <= 4096 && h <= 4096) {
+                g_textures[g_bound_tex].pix =
+                    (uint32_t *)calloc((size_t)w * h, 4);
+            }
+            break;
+        }
+        if (w <= 0 || h <= 0)
             break;
         free(g_textures[g_bound_tex].pix);
         g_textures[g_bound_tex].pix = convert_teximage(pixels, w, h, fmt, type);
         g_textures[g_bound_tex].w = w;
         g_textures[g_bound_tex].h = h;
+        {
+            static uint32_t ok_logs = 0;
+            if (ok_logs < 32)
+                LOGW("TexImage2D OK: tex=%u %dx%d pix=%p",
+                     g_bound_tex, w, h, (void *)g_textures[g_bound_tex].pix);
+            ok_logs++;
+        }
         break;
     }
 
@@ -1241,6 +1868,22 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
     case GLFN_DrawElements: {
         /* (mode, count, type, indices) */
         int count = (int)a1;
+        static uint32_t dec_calls = 0;
+        if ((dec_calls % 150) == 0) {
+            LOGI("DrawElements[%u]: mode=0x%X count=%d type=0x%X idx=0x%08X "
+                 "va_pos.on=%d va_tex.on=%d va_col.on=%d blend=%d",
+                 dec_calls, a0, count, a2, a3,
+                 g_va_pos.on, g_va_tex.on, g_va_col.on, g_en_blend);
+            if (dec_calls == 0) {
+                uint32_t i;
+                for (i = 0; i < 12 && i < (uint32_t)count; i++) {
+                    uint16_t ix = (uint16_t)zmem_read16(a3 + i * 2);
+                    LOGI("DX idx[%u]=%u va3=0x%08X", i, ix,
+                         g_va_pos.addr + (uint32_t)ix * 8);
+                }
+            }
+        }
+        dec_calls++;
         if (count <= 0 || count > 65536)
             break;
         draw_prim(a0, count, elem_index, a3, a2);
@@ -1269,7 +1912,10 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
     }
 
     case GLFN_GetError:
-        g_cpu.r[0] = 0; /* GL_NO_ERROR */
+        /* GLES: R0=erro. IGLES soft (6E0C4): out em a0, LDR R0,[out]. */
+        g_cpu.r[0] = 0;
+        if (a0 >= 0x10000000u && a0 < 0x30000000u)
+            zmem_write32(a0, 0);
         break;
 
     case GLFN_GetIntegerv:
@@ -1295,7 +1941,11 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         break;
 
     case GLFN_GetString: {
+        /* GLES puro: retorna const char* em R0.
+         * IQEGL/IGLES (Data East 0x12c24): R2=out, wrapper faz LDR R0,[out]
+         * — escrever o ponteiro em *R2 tambem. */
         uint32_t ret = 0;
+        static uint32_t gs_logs = 0;
         if (!g_gl_vendor)
             g_gl_vendor = alloc_guest_cstr("Qualcomm");
         if (!g_gl_renderer)
@@ -1304,14 +1954,46 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
             g_gl_version = alloc_guest_cstr("OpenGL ES-CM 1.1");
         if (!g_gl_extensions)
             g_gl_extensions = alloc_guest_cstr(
-                "GL_OES_fixed_point GL_OES_read_format "
-                "GL_QUALCOMM_vertex_buffer_object");
+                "GL_ARB_texture_env_combine GL_ARB_texture_env_crossbar "
+                "GL_ARB_texture_env_dot3 GL_ARB_texture_mirrored_repeat "
+                "GL_ARB_vertex_buffer_object "
+                "GL_ATI_extended_texture_coordinate_data_formats "
+                "GL_ATI_imageon_misc GL_ATI_texture_compression_atitc "
+                "GL_EXT_blend_equation_separate GL_EXT_blend_func_separate "
+                "GL_EXT_blend_minmax GL_EXT_blend_subtract GL_EXT_stencil_wrap "
+                "GL_OES_blend_equation_separate GL_OES_blend_func_separate "
+                "GL_OES_blend_subtract GL_OES_byte_coordinates "
+                "GL_OES_compressed_paletted_texture GL_OES_draw_texture "
+                "GL_OES_fixed_point GL_OES_framebuffer_object "
+                "GL_OES_matrix_palette GL_OES_point_size_array "
+                "GL_OES_point_sprite GL_OES_query_matrix GL_OES_read_format "
+                "GL_OES_single_precision GL_OES_texture_cube_map "
+                "GL_OES_vertex_buffer_object GL_OES_texture_npot "
+                "GL_OES_compressed_ETC1_RGB8_texture "
+                "GL_QUALCOMM_vertex_buffer_object ");
         switch (a0) {
         case 0x1F00: ret = g_gl_vendor; break;    /* GL_VENDOR */
         case 0x1F01: ret = g_gl_renderer; break;  /* GL_RENDERER */
         case 0x1F02: ret = g_gl_version; break;   /* GL_VERSION */
-        case 0x1F03: ret = g_gl_extensions; break;/* GL_EXTENSIONS */
+        case 0x1F03: /* GL_EXTENSIONS — ports Data East exigem OES_draw_texture */
+            ret = g_gl_extensions;
+            break;
         default: break;
+        }
+        if (a1 >= 0x10000000u && a1 < 0x40000000u)
+            zmem_write32(a1, ret);
+        if (gs_logs < 8) {
+            char peek[96];
+            uint32_t i;
+            for (i = 0; i < sizeof(peek) - 1 && ret; i++) {
+                uint8_t c = zmem_read8(ret + i);
+                peek[i] = c ? (char)c : '\0';
+                if (!c) break;
+            }
+            peek[i] = '\0';
+            LOGI("glGetString: pname=0x%04X -> 0x%08X (out=0x%08X) '%s'",
+                 a0, ret, a1, peek);
+            gs_logs++;
         }
         g_cpu.r[0] = ret;
         break;
@@ -1322,6 +2004,14 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         g_gl_viewport_y = (int32_t)a1;
         g_gl_viewport_w = (int32_t)a2;
         g_gl_viewport_h = (int32_t)a3;
+        /* QGL/Zeebo tem tela fixa 640x480: viewport 0x0 (ou vazio) significa
+         * "tela cheia" como faz o driver Qualcomm. */
+        if (g_gl_viewport_w <= 0 || g_gl_viewport_h <= 0) {
+            g_gl_viewport_x = 0;
+            g_gl_viewport_y = 0;
+            g_gl_viewport_w = ZFB_WIDTH;
+            g_gl_viewport_h = ZFB_HEIGHT;
+        }
         LOGI("glViewport(x=%d y=%d w=%d h=%d)", g_gl_viewport_x,
              g_gl_viewport_y, g_gl_viewport_w, g_gl_viewport_h);
         break;
@@ -1425,5 +2115,319 @@ void zgl_handle(uint32_t slot)
         g_cpu.r[0] = 0;
         break;
     }
+}
+
+/* ---- IGLES (QGL_INTF 0x0103D8EA / QGL_SUB 0x0103D8DD) ---- */
+
+/* Mapa slot IGLES -> indice alfabetico GLFN. A ordem segue a vtable
+ * glES_name_for_index do SDK Qualcomm (Brew3DCommon.h / zeemu): os slots
+ * 3..30 sao as variantes float, 31..108 as funcoes x, depois extras.
+ * -1 = nao mapeado (retorna 0 sem crash). */
+#define IGLES_NONE ((int16_t)-1)
+static int16_t g_igles_slot_map[160];
+static bool    g_igles_map_done = false;
+static uint32_t g_igles_object = 0;
+
+static void zgl_igles_map_init(void)
+{
+    static const struct { uint16_t slot; uint16_t fn; } tab[] = {
+        /* 3-30 float (Brew3DCommon gles_name_for_index): Orthof=22.
+         * Mapeia pra variante x; dispatch converte IEEE float -> GLfixed. */
+        { 22, GLFN_Orthox },
+        { 31, GLFN_ActiveTexture },      { 32, GLFN_AlphaFuncx },
+        { 33, GLFN_BindTexture },        { 34, GLFN_BlendFunc },
+        { 35, GLFN_Clear },              { 36, GLFN_ClearColorx },
+        { 37, GLFN_ClearDepthx },        { 38, GLFN_ClearStencil },
+        { 39, GLFN_ClientActiveTexture }, { 40, GLFN_Color4x },
+        { 41, GLFN_ColorMask },          { 42, GLFN_ColorPointer },
+        { 43, GLFN_CompressedTexImage2D }, { 44, GLFN_CompressedTexSubImage2D },
+        { 45, GLFN_CopyTexImage2D },     { 46, GLFN_CopyTexSubImage2D },
+        { 47, GLFN_CullFace },           { 48, GLFN_DeleteTextures },
+        { 49, GLFN_DepthFunc },          { 50, GLFN_DepthMask },
+        { 51, GLFN_DepthRangex },        { 52, GLFN_Disable },
+        { 53, GLFN_DisableClientState }, { 54, GLFN_DrawArrays },
+        { 55, GLFN_DrawElements },       { 56, GLFN_Enable },
+        { 57, GLFN_EnableClientState },  { 58, GLFN_Finish },
+        { 59, GLFN_Flush },              { 60, GLFN_Fogx },
+        { 61, GLFN_Fogxv },              { 62, GLFN_FrontFace },
+        { 63, GLFN_Frustumx },           { 64, GLFN_GenTextures },
+        { 65, GLFN_GetError },           { 66, GLFN_GetIntegerv },
+        { 67, GLFN_GetString },          { 68, GLFN_Hint },
+        { 69, GLFN_LightModelx },        { 70, GLFN_LightModelxv },
+        { 71, GLFN_Lightx },             { 72, GLFN_Lightxv },
+        { 73, GLFN_LineWidthx },         { 74, GLFN_LoadIdentity },
+        { 75, GLFN_LoadMatrixx },        { 76, GLFN_LogicOp },
+        { 77, GLFN_Materialx },          { 78, GLFN_Materialxv },
+        { 79, GLFN_MatrixMode },         { 80, GLFN_MultMatrixx },
+        { 81, GLFN_MultiTexCoord4x },    { 82, GLFN_Normal3x },
+        { 83, GLFN_NormalPointer },      { 84, GLFN_Orthox },
+        { 85, GLFN_PixelStorei },        { 86, GLFN_PointSizex },
+        { 87, GLFN_PolygonOffsetx },     { 88, GLFN_PopMatrix },
+        { 89, GLFN_PushMatrix },         { 90, GLFN_ReadPixels },
+        { 91, GLFN_Rotatex },            { 92, -1 },
+        { 93, GLFN_SampleCoveragex },    { 94, GLFN_Scalex },
+        { 95, GLFN_Scissor },            { 96, GLFN_ShadeModel },
+        { 97, GLFN_StencilFunc },        { 98, GLFN_StencilMask },
+        { 99, GLFN_StencilOp },          { 100, GLFN_TexCoordPointer },
+        { 101, GLFN_TexEnvx },           { 102, GLFN_TexEnvxv },
+        { 103, GLFN_TexImage2D },        { 104, GLFN_TexParameterx },
+        { 105, GLFN_TexSubImage2D },     { 106, GLFN_Translatex },
+        { 107, GLFN_VertexPointer },     { 108, GLFN_Viewport },
+    };
+    int i;
+    for (i = 0; i < 160; i++)
+        g_igles_slot_map[i] = IGLES_NONE;
+    for (i = 0; i < (int)(sizeof(tab) / sizeof(tab[0])); i++)
+        g_igles_slot_map[tab[i].slot] = (int16_t)tab[i].fn;
+    g_igles_map_done = true;
+}
+
+/* QGL soft wrappers: LDR R0,[PC,#lit]; ADD R0,PC,R0 → table base;
+ * depois [table+0xC]=ctx → [ctx]=vtbl → BX [vtbl+slot]. Sem bind,
+ * GenTextures via QI passa mas soft Bind/TexImage no-op (RE4 preto).
+ * Zuma@0x94174 (0x39034). RE4 PIC→0x72F30 (wrappers 0x6E840+);
+ * QI outs 0x72D38/3C sao outro struct — nao confundir. */
+#define ZUMA_QGL_TABLE 0x00093F74u
+#define RE4_QGL_TABLE  0x00072F30u
+#define CLSID_ZUMA     0x0109AF55u
+#define CLSID_RE4      0x0108AF6Cu
+
+static void zgl_bind_qgl_table(uint32_t table, uint32_t igles)
+{
+    if (!igles || !table)
+        return;
+    /* +0 = flag inited (Zuma InitGL 0x46B8 early-out se ==1). */
+    zmem_write8(table, 1);
+    zmem_write32(table + 0x4u, igles);
+    zmem_write32(table + 0x8u, igles);
+    zmem_write32(table + 0xCu, igles);
+}
+
+static void zgl_bind_game_qgl_tables(uint32_t igles)
+{
+    uint32_t clsid = zboot_get_applet_clsid();
+    if (clsid == CLSID_RE4)
+        zgl_bind_qgl_table(RE4_QGL_TABLE, igles);
+    else if (clsid == CLSID_ZUMA || clsid == 0)
+        zgl_bind_qgl_table(ZUMA_QGL_TABLE, igles);
+    /* clsid==0: Zuma path during early QI before zboot_start sets CLSID
+     * (Data East / FP nao usam soft table). */
+}
+
+bool zgl_hle_zuma_soft_rgb565(uint32_t bmp, uint32_t pot_w, uint32_t pot_h)
+{
+    uint32_t src, pitch;
+    uint16_t cx, cy;
+    uint8_t depth;
+    uint32_t *out;
+    uint32_t x, y, n;
+    static uint32_t hits = 0;
+
+    if (!bmp || pot_w == 0 || pot_h == 0 || pot_w > 2048 || pot_h > 2048)
+        return false;
+    if (g_bound_tex == 0 || g_bound_tex >= ZGL_MAX_TEXTURES)
+        return false;
+    depth = zmem_read8(bmp + 28u);
+    if (depth != 2 && depth != 16)
+        return false;
+    src = zmem_read32(bmp + 8u);
+    cx = zmem_read16(bmp + 20u);
+    cy = zmem_read16(bmp + 22u);
+    pitch = zmem_read16(bmp + 24u);
+    if (!src || cx == 0 || cy == 0 || cx > pot_w || cy > pot_h)
+        return false;
+    if (pitch < (uint32_t)cx * 2u)
+        pitch = (uint32_t)cx * 2u;
+
+    n = pot_w * pot_h;
+    out = (uint32_t *)calloc((size_t)n, 4);
+    if (!out)
+        return false;
+    for (y = 0; y < cy; y++) {
+        uint32_t row = src + y * pitch;
+        for (x = 0; x < cx; x++) {
+            uint16_t v = zmem_read16(row + x * 2u);
+            uint32_t r = (v >> 11) & 31, g = (v >> 5) & 63, b = v & 31;
+            out[y * pot_w + x] =
+                0xFF000000u |
+                ((r << 3 | r >> 2) << 16) |
+                ((g << 2 | g >> 4) << 8) |
+                (b << 3 | b >> 2);
+        }
+    }
+    free(g_textures[g_bound_tex].pix);
+    g_textures[g_bound_tex].pix = out;
+    g_textures[g_bound_tex].w = (int)pot_w;
+    g_textures[g_bound_tex].h = (int)pot_h;
+    if (hits < 24)
+        LOGI("ZUMA HLE soft-rgb565 bound=%u %ux%u←%ux%u src=0x%08X",
+             g_bound_tex, pot_w, pot_h, cx, cy, src);
+    hits++;
+    return true;
+}
+
+uint32_t zgl_create_igles_interface(void)
+{
+    uint32_t vtbl, obj, i;
+    if (!g_igles_map_done)
+        zgl_igles_map_init();
+    if (g_igles_object) {
+        zgl_bind_game_qgl_tables(g_igles_object);
+        return g_igles_object;
+    }
+    vtbl = zheap_alloc(160 * 4);
+    obj  = zheap_alloc(4);
+    if (!vtbl || !obj)
+        return 0;
+    for (i = 0; i < 160; i++)
+        zmem_write32(vtbl + i * 4, ZTRAP_ADDR(ZT_IGLES_BASE + i));
+    zmem_write32(obj, vtbl);
+    g_igles_object = obj;
+    zgl_bind_game_qgl_tables(obj);
+    LOGI("IGLES obj=0x%08X vtbl=0x%08X QGL@0x%08X (clsid=0x%08X) bound",
+         obj, vtbl,
+         (zboot_get_applet_clsid() == CLSID_RE4) ? RE4_QGL_TABLE : ZUMA_QGL_TABLE,
+         zboot_get_applet_clsid());
+    return g_igles_object;
+}
+
+static const char *zgl_slot_name(int slot);
+static uint32_t zgl_igles_dbg_call(uint32_t slot, uint32_t sp0);
+static void zgl_igles_dispatch_gl(uint32_t slot, int16_t fn, uint32_t sp0);
+
+void zgl_igles_handle(uint32_t slot)
+{
+    static uint32_t warn_count = 0;
+    int16_t fn;
+
+    switch (slot) {
+    case 0: /* AddRef */
+    case 1: /* Release */
+        g_cpu.r[0] = 1;
+        return;
+    case 2: /* QueryInterface(po, iid, ppobj) */
+        if (g_cpu.r[2])
+            zmem_write32(g_cpu.r[2], g_igles_object);
+        g_cpu.r[0] = 0;
+        return;
+    default:
+        break;
+    }
+
+    if (slot >= 160) {
+        g_cpu.r[0] = 0;
+        return;
+    }
+    if (!g_igles_map_done)
+        zgl_igles_map_init();
+    fn = g_igles_slot_map[slot];
+    if (fn < 0) {
+        if (warn_count < 16) {
+            LOGW("igles: slot %u sem implementacao (r0=0x%08X r1=0x%08X)",
+                 slot, g_cpu.r[0], g_cpu.r[1]);
+            warn_count++;
+        }
+        g_cpu.r[0] = 0;
+        return;
+    }
+
+    /* Convencao QGL: this em R0; args GL em R1,R2,R3 e o resto na pilha
+     * a partir do primeiro slot (daí o shift no zbrew_stack_arg). O 4o
+     * arg vem de SP0 SEM shift; os demais leem SP[n+1]. */
+    {
+        uint32_t sp0 = zbrew_stack_arg(0); /* shift desligado: SP[0] */
+        zgl_igles_dbg_call(slot, sp0);
+        zgl_igles_dispatch_gl(slot, fn, sp0);
+    }
+}
+
+static const char *zgl_slot_name(int slot)
+{
+    static const struct { uint16_t slot; const char *nm; } tab[] = {
+        { 22, "Orthof" },
+        { 31, "ActiveTexture" }, { 32, "AlphaFuncx" }, { 33, "BindTexture" },
+        { 34, "BlendFunc" }, { 35, "Clear" }, { 36, "ClearColorx" },
+        { 37, "ClearDepthx" }, { 38, "ClearStencil" },
+        { 39, "ClientActiveTexture" }, { 40, "Color4x" },
+        { 41, "ColorMask" }, { 42, "ColorPointer" },
+        { 43, "CompressedTexImage2D" }, { 44, "CompressedTexSubImage2D" },
+        { 45, "CopyTexImage2D" }, { 46, "CopyTexSubImage2D" },
+        { 47, "CullFace" }, { 48, "DeleteTextures" }, { 49, "DepthFunc" },
+        { 50, "DepthMask" }, { 51, "DepthRangex" }, { 52, "Disable" },
+        { 53, "DisableClientState" }, { 54, "DrawArrays" },
+        { 55, "DrawElements" }, { 56, "Enable" }, { 57, "EnableClientState" },
+        { 58, "Finish" }, { 59, "Flush" }, { 60, "Fogx" }, { 61, "Fogxv" },
+        { 62, "FrontFace" }, { 63, "Frustumx" }, { 64, "GenTextures" },
+        { 65, "GetError" }, { 66, "GetIntegerv" }, { 67, "GetString" },
+        { 68, "Hint" }, { 69, "LightModelx" }, { 70, "LightModelxv" },
+        { 71, "Lightx" }, { 72, "Lightxv" }, { 73, "LineWidthx" },
+        { 74, "LoadIdentity" }, { 75, "LoadMatrixx" }, { 76, "LogicOp" },
+        { 77, "Materialx" }, { 78, "Materialxv" }, { 79, "MatrixMode" },
+        { 80, "MultMatrixx" }, { 81, "MultiTexCoord4x" }, { 82, "Normal3x" },
+        { 83, "NormalPointer" }, { 84, "Orthox" }, { 85, "PixelStorei" },
+        { 86, "PointSizex" }, { 87, "PolygonOffsetx" }, { 88, "PopMatrix" },
+        { 89, "PushMatrix" }, { 90, "ReadPixels" }, { 91, "Rotatex" },
+        { 93, "SampleCoveragex" }, { 94, "Scalex" }, { 95, "Scissor" },
+        { 96, "ShadeModel" }, { 97, "StencilFunc" }, { 98, "StencilMask" },
+        { 99, "StencilOp" }, { 100, "TexCoordPointer" }, { 101, "TexEnvx" },
+        { 102, "TexEnvxv" }, { 103, "TexImage2D" }, { 104, "TexParameterx" },
+        { 105, "TexSubImage2D" }, { 106, "Translatex" },
+        { 107, "VertexPointer" }, { 108, "Viewport" },
+    };
+    unsigned i;
+    for (i = 0; i < sizeof(tab) / sizeof(tab[0]); i++)
+        if (tab[i].slot == (uint16_t)slot)
+            return tab[i].nm;
+    return "?";
+}
+
+static uint32_t zgl_igles_dbg_call(uint32_t slot, uint32_t sp0)
+{
+    static uint32_t dbg = 0;
+    /* Soft Zuma TexImage vem depois do fade: precisa de margem. */
+    if (dbg < 200 || slot == 103u) {
+        if (dbg < 200 || (slot == 103u && dbg < 280)) {
+            LOGW("iges: slot=%u(%s) r0=0x%08X r1=0x%08X r2=0x%08X r3=0x%08X "
+                 "sp0=0x%08X sp1=0x%08X sp4=0x%08X LR=0x%08X bound=%u",
+                 slot, zgl_slot_name((int)slot),
+                 g_cpu.r[0], g_cpu.r[1], g_cpu.r[2], g_cpu.r[3], sp0,
+                 zmem_read32(g_cpu.r[REG_SP] + 4),
+                 zmem_read32(g_cpu.r[REG_SP] + 16),
+                 g_cpu.r[REG_LR], g_bound_tex);
+            dbg++;
+        }
+    }
+    return sp0;
+}
+
+static uint32_t fbits_to_fixed(uint32_t bits)
+{
+    float f;
+    memcpy(&f, &bits, sizeof(f));
+    return (uint32_t)(int32_t)(f * 65536.0f);
+}
+
+static void zgl_igles_dispatch_gl(uint32_t slot, int16_t fn, uint32_t sp0)
+{
+    uint32_t a0 = g_cpu.r[1], a1 = g_cpu.r[2], a2 = g_cpu.r[3], a3 = sp0;
+    /* Slots float 3..30: args sao IEEE754; Orthox/Frustumx esperam GLfixed. */
+    if (slot >= 3 && slot <= 30) {
+        a0 = fbits_to_fixed(a0);
+        a1 = fbits_to_fixed(a1);
+        a2 = fbits_to_fixed(a2);
+        a3 = fbits_to_fixed(a3);
+        /* Orthof/Frustumf: near/far tambem float na pilha (sp1/sp2 com shift) */
+        if (fn == GLFN_Orthox || fn == GLFN_Frustumx) {
+            uint32_t n = fbits_to_fixed(zmem_read32(g_cpu.r[REG_SP] + 4));
+            uint32_t f = fbits_to_fixed(zmem_read32(g_cpu.r[REG_SP] + 8));
+            /* Reescreve sp slots 1/2 temporariamente via stack_arg path:
+             * com shift ligado, stack_arg(0/1) leem SP+4 / SP+8. */
+            zmem_write32(g_cpu.r[REG_SP] + 4, n);
+            zmem_write32(g_cpu.r[REG_SP] + 8, f);
+        }
+    }
+    zbrew_stack_arg_shift(true);
+    zgl_dispatch((uint32_t)fn, a0, a1, a2, a3);
+    zbrew_stack_arg_shift(false);
 }
 

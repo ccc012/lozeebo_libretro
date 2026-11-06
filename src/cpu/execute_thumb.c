@@ -26,8 +26,9 @@ static void set_carry(bool c) {
 }
 
 void zthumb_execute(uint16_t instr) {
-    /* Formato 19: BL/BLX (dois halfwords) */
-    if ((instr & 0xF000) == 0xF000) {
+    /* Formato 19: BL/BLX (dois halfwords). BLX suffix usa 0xE800,
+     * portanto o gate precisa aceitar E/F; o h abaixo separa prefix/suffix. */
+    if ((instr & 0xE000) == 0xE000) {
         uint32_t h = (instr >> 11) & 3;
         if (h == 2) {
             /* prefixo: LR = PC + (offset com sinal << 12) */
