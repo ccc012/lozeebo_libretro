@@ -2,7 +2,9 @@
 
 - Branch: `front/repo-hygiene`
 - Worktree: `D:\zeebo-worktrees\repo-hygiene`
-- Estado: active
+- Estado: ready-merge
+- Branch publicada: https://github.com/ccc012/lozeebo_libretro/tree/front/repo-hygiene
+- PR: bloqueado; base `wip/integration-20261106` ausente no remoto
 - Escopo: documentação raiz, `docs/`, README, `.gitignore`, `.github/`, licença e metadados
 - Proibido: `src/`, DLLs, ROMs, builds e worktrees de jogos
 
