@@ -13,6 +13,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <assert.h>
 #include "brew.h"
 #include "aee_ids.h"
 #include "imedia.h"
@@ -152,6 +153,7 @@ void zboot_thread_resume_callback(void) {
  * zboot_process_timers (um callback por vez, como os timers). */
 #define ZSIGNAL_QUEUE_MAX 32
 typedef struct {
+    uint32_t signal_obj;
     uint32_t callback;
     uint32_t user;
     uint32_t arg1;
@@ -880,27 +882,66 @@ static uint32_t make_signal_object(uint32_t callback, uint32_t user) {
                          ZTRAP_ADDR(ZT_SIGNAL_BASE + (uint32_t)i));
         LOGI("signal vtable alocada em 0x%08X", g_signal_vtbl);
     }
-    obj = zheap_alloc(0x18);
+    obj = zheap_alloc(0x1c);
     if (!obj) return 0;
-    memset((void *)zmem_host_ptr(obj, 0x18), 0, 0x18);
+    memset((void *)zmem_host_ptr(obj, 0x1c), 0, 0x1c);
     zmem_write32(obj + 0, g_signal_vtbl);
     zmem_write32(obj + 4, callback);
     zmem_write32(obj + 8, user);
     zmem_write32(obj + 12, 0); /* nao detached */
     zmem_write32(obj + 16, 0); /* sem callback pendente */
+    /* CreateSignal entrega ISignal e ISignalCtl, cada interface com uma ref. */
+    zmem_write32(obj + 20, 2);
     return obj;
 }
 
+static bool zboot_signal_valid(uint32_t obj) {
+    return obj && obj < ZDISPLAY_ADDR_MAX && g_signal_vtbl &&
+           zmem_read32(obj) == g_signal_vtbl && zmem_read32(obj + 20) != 0;
+}
+
+static uint32_t zboot_signal_addref(uint32_t obj) {
+    uint32_t refs;
+    if (!zboot_signal_valid(obj)) return 0;
+    refs = zmem_read32(obj + 20) + 1;
+    zmem_write32(obj + 20, refs);
+    return refs;
+}
+
+static uint32_t zboot_signal_release(uint32_t obj) {
+    uint32_t refs;
+    if (!zboot_signal_valid(obj)) return 0;
+    refs = zmem_read32(obj + 20) - 1;
+    zmem_write32(obj + 20, refs);
+    if (!refs) {
+        zmem_write32(obj + 4, 0);
+        zmem_write32(obj + 8, 0);
+        zmem_write32(obj + 12, 1);
+        zmem_write32(obj + 16, 0);
+    }
+    return refs;
+}
+
+static void zboot_signal_register(uint32_t *registered, uint32_t signal_obj) {
+    uint32_t old = *registered;
+    if (old == signal_obj) return;
+    if (signal_obj && !zboot_signal_addref(signal_obj)) signal_obj = 0;
+    *registered = signal_obj;
+    if (old) zboot_signal_release(old);
+}
+
 /* Enfileira um callback de sinal (nao chama o guest diretamente). */
-static void zboot_signal_queue(uint32_t callback, uint32_t user,
-                               uint32_t arg1, uint32_t arg2,
-                               const char *label) {
+static void zboot_signal_queue_object(uint32_t signal_obj, uint32_t callback,
+                                      uint32_t user, uint32_t arg1,
+                                      uint32_t arg2, const char *label) {
     if (!callback || callback >= ZDISPLAY_ADDR_MAX) return;
     if (g_signal_queue_count >= ZSIGNAL_QUEUE_MAX) {
         LOGW("boot: fila de sinais cheia (%d) - callback 0x%08X descartado",
              g_signal_queue_count, callback);
         return;
     }
+    if (signal_obj && !zboot_signal_addref(signal_obj)) return;
+    g_signal_queue[g_signal_queue_count].signal_obj = signal_obj;
     g_signal_queue[g_signal_queue_count].callback = callback;
     g_signal_queue[g_signal_queue_count].user = user;
     g_signal_queue[g_signal_queue_count].arg1 = arg1;
@@ -913,7 +954,7 @@ static void zboot_signal_queue(uint32_t callback, uint32_t user,
  * callback no guest sem chamar reentrantemente. */
 void zbrew_queue_signal_callback(uint32_t callback, uint32_t user,
                                  uint32_t arg1, uint32_t arg2) {
-    zboot_signal_queue(callback, user, arg1, arg2, "async");
+    zboot_signal_queue_object(0, callback, user, arg1, arg2, "async");
 }
 
 /* ISignal_Set: se o sinal esta detached, ignora; se nao ha callback
@@ -921,7 +962,7 @@ void zbrew_queue_signal_callback(uint32_t callback, uint32_t user,
  * enfileira a notificacao PFNNOTIFY(pUser). */
 static void zboot_signal_fire(uint32_t signal_obj, const char *label) {
     uint32_t callback, user;
-    if (!signal_obj || signal_obj >= ZDISPLAY_ADDR_MAX) return;
+    if (!zboot_signal_valid(signal_obj)) return;
     if (zmem_read32(signal_obj + 12) != 0) {
         if (getenv("ZEEMU_TRACE_HID"))
             LOGI("signal: %s ignorado (detached) obj=0x%08X", label, signal_obj);
@@ -937,7 +978,7 @@ static void zboot_signal_fire(uint32_t signal_obj, const char *label) {
         return;
     }
     zmem_write32(signal_obj + 16, 0);
-    zboot_signal_queue(callback, user, 0, 0, label);
+    zboot_signal_queue_object(signal_obj, callback, user, 0, 0, label);
 }
 
 /* Drain um SendEvent ASYNC: HandleEvent(applet, evt, wp, dwp). */
@@ -976,6 +1017,18 @@ static bool zboot_signal_drain_one(void) {
     for (i = 1; i < g_signal_queue_count; i++)
         g_signal_queue[i - 1] = g_signal_queue[i];
     g_signal_queue_count--;
+    if (p.signal_obj) {
+        bool live = zboot_signal_valid(p.signal_obj) &&
+                    zmem_read32(p.signal_obj + 12) == 0 &&
+                    zmem_read32(p.signal_obj + 4) == p.callback &&
+                    zmem_read32(p.signal_obj + 8) == p.user;
+        zboot_signal_release(p.signal_obj);
+        if (!live) {
+            LOGI("boot: sinal (%s) cancelado antes do callback",
+                 p.label ? p.label : "?");
+            return false;
+        }
+    }
     LOGI("boot: sinal (%s) callback=0x%08X user=0x%08X",
          p.label ? p.label : "?", p.callback, p.user);
     g_state = BOOT_SIGNAL_CALL;
@@ -984,6 +1037,24 @@ static bool zboot_signal_drain_one(void) {
     g_signal_context_saved = true;
     guest_call(p.callback, p.user, p.arg1, p.arg2, 0);
     return true;
+}
+
+static void zboot_signal_lifetime_selftest(void) {
+    uint32_t signal_obj = make_signal_object(0x1000u, 0x2000u);
+    uint32_t registered = 0;
+    assert(signal_obj && zmem_read32(signal_obj + 20) == 2);
+    zboot_signal_register(&registered, signal_obj); /* attach */
+    assert(zmem_read32(signal_obj + 20) == 3);
+    assert(zboot_signal_release(signal_obj) == 2);  /* ISignal */
+    assert(zboot_signal_release(signal_obj) == 1);  /* ISignalCtl */
+    zboot_signal_fire(signal_obj, "selftest");       /* queued ref */
+    assert(g_signal_queue_count == 1 && zmem_read32(signal_obj + 20) == 2);
+    zmem_write32(signal_obj + 12, 1);                /* Detach before fire */
+    assert(!zboot_signal_drain_one());
+    assert(zmem_read32(signal_obj + 20) == 1);       /* registration only */
+    zboot_signal_register(&registered, 0);           /* owner Release */
+    assert(!zboot_signal_valid(signal_obj));
+    LOGI("signal lifetime selftest: attach/detach/fire/release OK");
 }
 
 void zboot_start(uint32_t entry, uint32_t applet_clsid) {
@@ -1006,6 +1077,8 @@ void zboot_start(uint32_t entry, uint32_t applet_clsid) {
     g_signal_queue_count = 0;
     g_app_evt_queue_count = 0;
     g_signal_context_saved = false;
+    if (getenv("ZEEMU_SIGNAL_SELFTEST"))
+        zboot_signal_lifetime_selftest();
     g_device_bitmap = 0;
     g_display_obj = 0;
     g_qegl_surface = 0;
@@ -2224,32 +2297,18 @@ void zbrew_handle_signal(uint32_t id) {
 
     switch (slot) {
     case 0: /* AddRef */
-        g_cpu.r[0] = 1;
+        g_cpu.r[0] = zboot_signal_addref(obj);
         break;
 
     case 1: /* Release */
-        /* Se o guest liberar um sinal registrado, limpa as globais HID
-         * para nao disparar callback em memoria morta depois. */
-        if (g_hid_connect_signal && obj == g_hid_connect_signal) {
-            LOGI("Release: connect signal 0x%08X - registro HID limpo", obj);
-            g_hid_connect_signal = 0;
-            g_hid_connect_pending = false;
-        }
-        if (g_hid_button_signal && obj == g_hid_button_signal) {
-            LOGI("Release: button signal 0x%08X - registro HID limpo", obj);
-            g_hid_button_signal = 0;
-        }
-        if (g_hid_position_signal && obj == g_hid_position_signal) {
-            LOGI("Release: position signal 0x%08X - registro HID limpo", obj);
-            g_hid_position_signal = 0;
-        }
-        g_cpu.r[0] = 1;
+        g_cpu.r[0] = zboot_signal_release(obj);
         break;
 
     case 2: { /* QueryInterface: ISignal e ISignalCtl sao o mesmo objeto */
         uint32_t iid = g_cpu.r[1];
         uint32_t out = g_cpu.r[2];
-        if (iid && obj && out && out < ZDISPLAY_ADDR_MAX) {
+        if (iid && obj && out && out < ZDISPLAY_ADDR_MAX &&
+            zboot_signal_addref(obj)) {
             zmem_write32(out, obj);
             g_cpu.r[0] = 0; /* SUCCESS */
         } else {
@@ -2264,7 +2323,7 @@ void zbrew_handle_signal(uint32_t id) {
         break;
 
     case 4: /* Detach */
-        if (obj && obj < ZDISPLAY_ADDR_MAX) {
+        if (zboot_signal_valid(obj)) {
             zmem_write32(obj + 12, 1);
             zmem_write32(obj + 16, 0);
         }
@@ -2400,25 +2459,18 @@ void zbrew_handle_stub(uint32_t id) {
             g_cpu.r[0] = 0;
             break;
         }
-        /* Se o guest liberar um objeto HID/signal registrado (destrutor do
-         * Joystick no final do boot, etc), as globais passam a apontar para
-         * memoria morta ou reutilizada (0xEA0000xx) e qualquer disparo
-         * posterior (connect no boot, button/position no tick) crasha no
-         * callback. Limpa o registro aqui; o jogo re-registra se recriar. */
-        if (g_hid_connect_signal && obj == g_hid_connect_signal) {
-            LOGI("Release: connect signal 0x%08X - registro HID limpo", obj);
-            g_hid_connect_signal = 0;
+        /* O registrador HID possui uma referencia ao signal. Solta-la junto
+         * com a interface dona; Release do ISignal nao invalida o registro. */
+        if (clsid == AEECLSID_HID_REAL) {
+            zboot_signal_register(&g_hid_connect_signal, 0);
             g_hid_connect_pending = false;
+            LOGI("IHID Release: connect signal liberado");
+        } else if (clsid == ZCLSID_HID_DEVICE) {
+            zboot_signal_register(&g_hid_button_signal, 0);
+            zboot_signal_register(&g_hid_position_signal, 0);
+            LOGI("IHIDDevice Release: button/position signals liberados");
         }
-        if (g_hid_button_signal && obj == g_hid_button_signal) {
-            LOGI("Release: button signal 0x%08X - registro HID limpo", obj);
-            g_hid_button_signal = 0;
-        }
-        if (g_hid_position_signal && obj == g_hid_position_signal) {
-            LOGI("Release: position signal 0x%08X - registro HID limpo", obj);
-            g_hid_position_signal = 0;
-        }
-        g_cpu.r[0] = 1; /* refcount */
+        g_cpu.r[0] = 0; /* stubs nao possuem outra referencia */
         break;
     }
     case 2: /* QueryInterface (exceto IDisplay, que nao tem QI no slot 2) */
@@ -2878,7 +2930,7 @@ void zbrew_handle_stub(uint32_t id) {
             break;
         }
         if (clsid == AEECLSID_HID_REAL) { /* IHID_RegisterForConnectEvents */
-            g_hid_connect_signal = g_cpu.r[1];
+            zboot_signal_register(&g_hid_connect_signal, g_cpu.r[1]);
             g_hid_connect_pending = g_hid_connect_signal != 0;
             LOGI("IHID_RegisterForConnectEvents signal=0x%08X",
                  g_hid_connect_signal);
@@ -3095,7 +3147,7 @@ void zbrew_handle_stub(uint32_t id) {
             break;
         }
         if (clsid == ZCLSID_HID_DEVICE) {
-            g_hid_button_signal = g_cpu.r[1];
+            zboot_signal_register(&g_hid_button_signal, g_cpu.r[1]);
             LOGI("IHIDDevice_RegisterForButtonEvent signal=0x%08X",
                  g_hid_button_signal);
         }
@@ -3394,7 +3446,7 @@ void zbrew_handle_stub(uint32_t id) {
         break;
     case 14:
         if (clsid == ZCLSID_HID_DEVICE) {
-            g_hid_position_signal = g_cpu.r[1];
+            zboot_signal_register(&g_hid_position_signal, g_cpu.r[1]);
             LOGI("IHIDDevice_RegisterForPositionChange signal=0x%08X",
                  g_hid_position_signal);
             g_cpu.r[0] = 0;

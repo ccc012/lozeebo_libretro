@@ -14,7 +14,7 @@ DLL deploy: SHA256 `638D14381D37C9C12C2C7D21D3813D9D3E5F13CF454F36B1A2F19F1F8D93
 
 | Arquivo | Owner agora | Frente |
 |---|---|---|
-| `src/brew/boot.c` | scheduler=`fp-flow-local`; seção HID liberada | FP exclusivo |
+| `src/brew/boot.c` | scheduler=`fp-flow-local`; HID/signal/refcount/callback=`fp-signal-local` | FP exclusivo |
 | `src/gpu/egl_gl.c` | — livre (não editar nesta rodada) | — |
 | `src/brew/imedia.c` | — livre | — |
 | `src/brew/idisplay_real.c` | — livre | — |
