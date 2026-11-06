@@ -31,7 +31,7 @@ DLL deploy: SHA256 `638D14381D37C9C12C2C7D21D3813D9D3E5F13CF454F36B1A2F19F1F8D93
 | `zuma-stable` | Zuma pós-tex2d estabilidade 900f SUMMARY | `front/zuma-stable` | — | `parked` | cpu.c empty-count OK | Smoke limpo + cena |
 | `fp-input` | Family Pack input pós-menu | `front/fp-input` | — | `parked` | áudio ~489k OK | HID/Register path |
 | `ovos-scene` | Ovos cena reconhecível | `front/ovos-scene` | — | `parked` | bitmap unificado | Visual + input |
-| `rea-runtime` | REA runtime Infuse (oracle) | `front/rea-runtime` | — | `parked` | Ghidra 12.1.4 | Sem tocar src/ sem contrato |
+| `rea-runtime` | REA runtime Infuse (oracle) | `front/rea-runtime` → `D:\zeebo-worktrees\rea-runtime` | docs | `ready-merge` | REA 6.8.0; Ghidra 12.1.4 | Integrar contrato Display runtime |
 | `honest69` | Regressão 69 baseline reproduzível | mestre only | mestre | `idle` | DLL estável | Rodar após merges |
 | `coord` | Sistema de coordenação | principal | mestre | `active` | — | Fechar docs + worktrees |
 
