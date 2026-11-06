@@ -37,7 +37,9 @@ DLL deploy: SHA256 `638D14381D37C9C12C2C7D21D3813D9D3E5F13CF454F36B1A2F19F1F8D93
 | `fp-audio-local` | Áudio completo FP | `front/fp-audio-local` @ Temp opencode | — | `merged` | 600/1800f exit 0 | Validar áudio no minigame após input/flow |
 | `fp-video-local` | UI/vídeo completo FP | `front/fp-video-local` @ Temp opencode | — | `blocked` | fixture sem draw pós-start | Clip candidate `d0d5f34` preservado, não integrado |
 | `fp-flow-local` | Scheduler/callbacks/navegação FP | `front/fp-flow-local` @ Temp opencode | — | `blocked` | Detach invalida signal | Transferido para `fp-signal-local` |
-| `fp-signal-local` | Lifetime HID signal/callback FP | `front/fp-signal-local` @ Temp opencode | — | `merged` | self-test + 600f completo | Validar menu/minigame manual/script avançado |
+| `fp-signal-local` | Lifetime HID signal/callback FP | `front/fp-signal-local` @ Temp opencode | — | `merged` | self-test + 600f completo | Validado |
+| `fp-gameplay-local` | Script multi-input FP | `front/fp-gameplay-local` @ Temp opencode | — | `merged-partial` | 1800f exit 0; branco final | Harness principal preservado; minigame pendente |
+| `fp-visual-nav-local` | Captura temporal e navegação FP | `front/fp-visual-nav-local` @ Temp opencode | agente FP visual | `active` | signal fix + harness dumps | Identificar menu/minigame real |
 | `honest69` | Regressão 69 baseline reproduzível | mestre only | mestre | `paused` | foco FP | Retomar após FP jogável |
 | `coord` | Sistema de coordenação | `wip/integration-20261106` | mestre | `active` | — | Integrar somente FP |
 
