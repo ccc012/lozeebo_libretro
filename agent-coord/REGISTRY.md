@@ -14,7 +14,7 @@ DLL deploy: SHA256 `638D14381D37C9C12C2C7D21D3813D9D3E5F13CF454F36B1A2F19F1F8D93
 
 | Arquivo | Owner agora | Frente |
 |---|---|---|
-| `src/brew/boot.c` | scheduler=`fp-flow-local`; seção HID liberada | FP exclusivo |
+| `src/brew/boot.c` | HID+signal/refcount=`fp-signal-local` | FP exclusivo |
 | `src/gpu/egl_gl.c` | — livre (não editar nesta rodada) | — |
 | `src/brew/imedia.c` | — livre | — |
 | `src/brew/idisplay_real.c` | — livre | — |
@@ -36,7 +36,8 @@ DLL deploy: SHA256 `638D14381D37C9C12C2C7D21D3813D9D3E5F13CF454F36B1A2F19F1F8D93
 | `fp-input-local` | Controle/menu/minigame FP | `front/fp-input-local` @ Temp opencode | — | `merged-partial` | B/voltar corrigido | Localizar pacote 277229/data.vfs; validar navegação |
 | `fp-audio-local` | Áudio completo FP | `front/fp-audio-local` @ Temp opencode | — | `merged` | 600/1800f exit 0 | Validar áudio no minigame após input/flow |
 | `fp-video-local` | UI/vídeo completo FP | `front/fp-video-local` @ Temp opencode | — | `blocked` | fixture sem draw pós-start | Clip candidate `d0d5f34` preservado, não integrado |
-| `fp-flow-local` | Scheduler/callbacks/navegação FP | `front/fp-flow-local` @ Temp opencode | agente FP flow | `active` | seção scheduler boot.c | Estado guest/menu/minigame |
+| `fp-flow-local` | Scheduler/callbacks/navegação FP | `front/fp-flow-local` @ Temp opencode | — | `blocked` | Detach invalida signal | Transferido para `fp-signal-local` |
+| `fp-signal-local` | Lifetime HID signal/callback FP | `front/fp-signal-local` @ Temp opencode | agente FP signal | `active` | owner boot.c HID+signal | Corrigir refcount; chegar menu |
 | `honest69` | Regressão 69 baseline reproduzível | mestre only | mestre | `paused` | foco FP | Retomar após FP jogável |
 | `coord` | Sistema de coordenação | `wip/integration-20261106` | mestre | `active` | — | Integrar somente FP |
 
