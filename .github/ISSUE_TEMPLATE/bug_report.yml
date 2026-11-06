@@ -1,0 +1,33 @@
+name: Bug report
+description: Relate uma falha reproduzível no core ou tooling
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Descrição
+      description: O que ocorreu e o que era esperado?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reprodução
+      description: Liste passos, ROM sem redistribuí-la, frontend, plataforma e configuração.
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Revisão do core
+      description: Commit, versão ou SHA256 da DLL.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs e evidências
+      description: Anexe logs relevantes. Remova dados pessoais e não envie ROMs comerciais.
+    validations:
+      required: true
