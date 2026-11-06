@@ -1,23 +1,29 @@
 # Frente: de-load
 
 **Objetivo:** Acelerar load romset Heavy Barrel / Caveman (IFile 1-byte / zip / CUNG).  
-**Estado:** parked  
+**Estado:** merged no snapshot WIP `31e52a6`  
 **Branch/WT:** `front/de-load` @ `D:\zeebo-worktrees\de-load`  
-**Owner arquivos:** preferir `mod_loader.c` / IFile paths; `boot.c` só se IThread — claim no REGISTRY  
-**Deps:** IThread `flag==0` já OK; BD DrawArrays OK  
-**Baseline:** BD DrawArrays=20; HB/CN `Loading romset` dentro budget
+**Owner arquivos:** livre  
+**Deps:** IThread `flag==0` já OK  
+**Evidência:** `validation-zip-accel/`
 
 ## Feito
 
 - Wake Data East `write8(flag,0)` em `IThread_Start`
-- BD: Starting emulation + DrawArrays; PPM cores reais em runs longos
-- SendEvent ASYNC não usado por DE
+- Cache RAM RO até 32 MB em `IFile`; remove `fread(1)`/`ftell` repetidos
+- `IFile_Map` + `IFile_SetCacheSize` + dispatch `brew.c/h`
+- Slice 50k preservado
+- HB, Caveman, BD 900f: EndLoading=sim; DrawArrays=20
+- Ovos e Family Pack 180f: `video_varied=1`
 
 ## Falta
 
-1. I/O HLE mais largo (não 1-byte) no path zip/CUNG
-2. Smoke HB+Caveman 900f com DrawArrays / varied
-3. Remover dump BITPACK barulhento se ainda ligado
+1. Remover dump BITPACK barulhento se ainda ligado
+2. Incluir HB/Caveman no próximo baseline 69
+
+## Integração
+
+Código já estava no commit de preservação `31e52a6`; não cherry-pick duplicado.
 
 ## Teste
 
