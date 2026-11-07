@@ -49,6 +49,9 @@ endif
 CC := gcc
 CFLAGS := -Wall -Wextra -O2 -g $(FPIC) -Isrc -Isrc/core
 LDFLAGS := $(SHARED)
+ifeq ($(PLATFORM),windows)
+LDFLAGS += -lbcrypt
+endif
 
 # =====================================================
 # Arquivos Fonte
@@ -83,6 +86,7 @@ SOURCES := \
 	src/gpu/egl_gl.c \
 	src/gpu/framebuffer.c \
 	src/input/input.c \
+	src/loader/content_package.c \
 	src/loader/bar_parser.c \
 	src/loader/mif_parser.c \
 	src/loader/mod_loader.c \

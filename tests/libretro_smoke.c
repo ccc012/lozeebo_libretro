@@ -39,6 +39,15 @@ static bool environment(unsigned command, void *data)
         ((struct retro_log_callback *)data)->log = frontend_log;
         return true;
     }
+    if (command == RETRO_ENVIRONMENT_GET_GAME_INFO_EXT && getenv("ZEEMU_SMOKE_ARCHIVE")) {
+        static struct retro_game_info_ext ext;
+        memset(&ext, 0, sizeof(ext));
+        ext.file_in_archive = true;
+        ext.archive_path = getenv("ZEEMU_SMOKE_ARCHIVE");
+        ext.archive_file = getenv("ZEEMU_SMOKE_MEMBER");
+        *(const struct retro_game_info_ext **)data = &ext;
+        return true;
+    }
     if (command == RETRO_ENVIRONMENT_SET_PIXEL_FORMAT)
         return *(enum retro_pixel_format *)data == RETRO_PIXEL_FORMAT_XRGB8888;
     if (command == RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME)
@@ -383,7 +392,9 @@ int main(int argc, char **argv)
         return 4;
     }
 
-    game.path = argv[2];
+    /* Emulate a frontend's archive#member path while reading the source archive. */
+    game.path = getenv("ZEEMU_SMOKE_CONTENT_PATH");
+    if (!game.path || !game.path[0]) game.path = argv[2];
     game.data = rom_data;
     game.size = rom_size;
 

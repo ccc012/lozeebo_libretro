@@ -30,6 +30,7 @@ void ztrace_set_profile_pc(int enabled);
 #include "../input/input.h"
 #include "../brew/brew.h"
 #include "../loader/mod_loader.h"
+#include "../loader/content_package.h"
 
 /* Instrucoes emuladas por frame (~60 MIPS; ajustar com profiling) */
 #define ZEEBO_INSTR_PER_FRAME 1000000u
@@ -61,9 +62,7 @@ static uint32_t g_cheat_addr[32];
 static uint8_t g_cheat_val[32];
 static bool g_cheat_enabled[32];
 static unsigned g_cheat_count = 0;
-static bool g_game_from_archive = false;
 static char g_archive_path[512];
-static char g_archive_file[256];
 
 static struct retro_core_option_v2_category g_option_categories[] = {
     { "video", "Video", "Video and framebuffer presentation options." },
@@ -296,9 +295,9 @@ void retro_get_system_info(struct retro_system_info *info) {
     memset(info, 0, sizeof(*info));
     info->library_name     = "LOZeebo";
     info->library_version  = "0.2-cpu";
-    info->valid_extensions = "mod|mif|bar|ggz|zip";
-    info->need_fullpath    = false;
-    info->block_extract    = false;
+    info->valid_extensions = "mod|mif|bar|ggz|zip|7z";
+    info->need_fullpath    = true;
+    info->block_extract    = true;
 }
 
 void retro_get_system_av_info(struct retro_system_av_info *info) {
@@ -399,23 +398,6 @@ static void make_asset_path_from_content(const struct retro_game_info *info,
     if (!out || out_len == 0) return;
     out[0] = '\0';
 
-    if (g_game_from_archive && g_archive_path[0] && g_archive_file[0]) {
-        const char *sep1 = strrchr(g_archive_path, '/');
-        const char *sep2 = strrchr(g_archive_path, '\\');
-        const char *sep = sep1 > sep2 ? sep1 : sep2;
-        size_t dir_len = sep ? (size_t)(sep - g_archive_path) : 0;
-        if (dir_len + 1 + strlen(g_archive_file) + 1 < out_len) {
-            memcpy(out, g_archive_path, dir_len);
-            out[dir_len] = '\0';
-            if (dir_len > 0)
-                snprintf(out + dir_len, out_len - dir_len, "%c%s",
-                         sep && sep[0] == '/' ? '/' : '\\', g_archive_file);
-            else
-                snprintf(out, out_len, "%s", g_archive_file);
-            return;
-        }
-    }
-
     if (info->path && info->path[0]) {
         snprintf(out, out_len, "%s", info->path);
     }
@@ -426,7 +408,9 @@ bool retro_load_game(const struct retro_game_info *info) {
     void *loaded_data = NULL;
     size_t loaded_size = 0;
     const struct retro_game_info_ext *ext_info = NULL;
-    char asset_path[512];
+    char asset_path[512], prepared[512], error[256];
+    struct retro_game_info resolved;
+    const char *package = NULL, *member = NULL;
 
     if (!info) {
         LOGE("retro_load_game: sem info de conteudo");
@@ -440,14 +424,38 @@ bool retro_load_game(const struct retro_game_info *info) {
         LOGE("retro_load_game: frontend nao suporta XRGB8888");
         return false;
     }
-    g_game_from_archive = false;
     g_archive_path[0] = '\0';
-    g_archive_file[0] = '\0';
     if (environ_cb(RETRO_ENVIRONMENT_GET_GAME_INFO_EXT, &ext_info) && ext_info &&
         ext_info->file_in_archive && ext_info->archive_path && ext_info->archive_file) {
-        g_game_from_archive = true;
-        snprintf(g_archive_path, sizeof(g_archive_path), "%s", ext_info->archive_path);
-        snprintf(g_archive_file, sizeof(g_archive_file), "%s", ext_info->archive_file);
+        package = ext_info->archive_path;
+        member = ext_info->archive_file;
+    } else if (zcontent_is_package(info->path)) {
+        package = info->path;
+    }
+    /* Some frontends provide archive#member without GET_GAME_INFO_EXT. */
+    if (!package && info->path && strchr(info->path, '#')) {
+        const char *split = strchr(info->path, '#');
+        size_t n = (size_t)(split - info->path);
+        if (n >= sizeof(g_archive_path)) return false;
+        memcpy(g_archive_path, info->path, n);
+        g_archive_path[n] = '\0';
+        if (zcontent_is_package(g_archive_path)) {
+            package = g_archive_path;
+            member = split + 1;
+        }
+    }
+    if (package) {
+        if (!zcontent_prepare(package, member, prepared, sizeof(prepared), error, sizeof(error))) {
+            struct retro_message msg = { error, 600 };
+            LOGE("Content package: %s", error);
+            environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
+            return false;
+        }
+        resolved = *info;
+        resolved.path = prepared;
+        resolved.data = NULL;
+        resolved.size = 0;
+        info = &resolved;
     }
 
     if (info->data && info->size) {
@@ -498,9 +506,7 @@ bool retro_load_game(const struct retro_game_info *info) {
 void retro_unload_game(void) {
     LOGI("retro_unload_game");
     g_game_loaded = false;
-    g_game_from_archive = false;
     g_archive_path[0] = '\0';
-    g_archive_file[0] = '\0';
     zaudio_stop_all();
 }
 
