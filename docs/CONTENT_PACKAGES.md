@@ -17,7 +17,9 @@ Nenhuma busca em PATH, shell, PowerShell ou execução de dados guest. Não há 
 Outras plataformas retornam erro explícito para pacote; extração manual completa + MOD continua alternativa.
 Dependência nativa nova de link: Windows BCrypt SHA256.
 
-8192 entradas, 512 MiB por membro, 2 GiB pacote de origem / soma extraída, listing 8 MiB, timeout 120s por processo.
+8192 entradas, 512 MiB por membro, 2 GiB pacote de origem / soma extraída, listing 8 MiB.
+Cada invocação pede cancelamento após 120s, inclusive com stdout contínuo ou `WriteFile` bloqueado. Job Object com `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` contém shim Chocolatey + decoder descendente: criação suspensa, associação obrigatória antes de `ResumeThread`; falha de associação recusa execução.
+Watchdog termina o Job e repete `CancelSynchronousIo` até o leitor sair; cleanup sinaliza/junta watchdog antes de liberar memória/handles. Não existe prazo absoluto de retorno: escalonamento e drivers Windows podem atrasar cancelamento/terminação; join prioriza segurança de lifetime. Hash, flush e outras fases fora de `run7` não têm deadline.
 Nomes ambíguos, absolutos, traversal, ADS, dispositivos Windows, links e duplicatas case-insensitive são rejeitados.
 7-Zip produz somente stdout. Core cria cada arquivo `CREATE_NEW`, controla bytes escritos e diretórios, impede reparse points existentes.
 Pacotes sólidos grandes podem demorar na primeira abertura: decoder invocado por arquivo para não delegar escrita de caminhos guest ao extrator.
@@ -39,6 +41,7 @@ Não há coleta automática de caches antigos. Mesmo usuário local malicioso co
 ```powershell
 cmake -S . -B build-content -DZEEBO_BUILD_SMOKE_TEST=ON
 cmake --build build-content --config Release --parallel 8
+.\build-content\Release\content_run7_check.exe
 python tests/check-content-packages.py
 python tests/check-content-frontend.py
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/fp-gate/check-content-path.ps1 -Mod 'D:\Games\Zeebo - Zeebo\Zeebo Family Pack (Brazil) (Es,Pt).7z' -BuildDir build-content
@@ -54,6 +57,11 @@ Build novo `build-content`, sem reutilizar CMakeCache herdado. Aviso MSBuild MSB
 
 Não houve teste visual no RetroArch instalado; não foi modificado. `.info` novo precisa acompanhar DLL numa futura instalação autorizada, senão frontend pode preservar comportamento antigo de seleção/extração.
 Não foram testados todos os 68 jogos, cache contra desligamento físico abrupto, nem plataformas não Windows. CPU/controle/gameplay não alterados.
+
+## Regressão watchdog / árvore (revisão de 89e4738)
+
+`content_run7_check` usa somente seam compile-time `ZCONTENT_RUN7_TEST`: executável mock próprio, deadline 500ms, sem opção/env runtime em produção. Mock cria filho + neto, registra os três PIDs; casos silencioso, stdout contínuo para NUL e stdout para pipe destino sem leitor (WriteFile bloqueado). Verifica falha, retorno observado <10s, todos PIDs terminados; saída normal `abc` funciona. Não depende de pacote gigante.
+RED executado substituindo temporariamente somente `run7` pela versão `89e4738`, com deadline de teste: falha em `WaitForSingleObject(p,5000)==WAIT_OBJECT_0` (descendente vivo). Mock inicial tinha parsing de argv incorreto; descartado, processos de teste encerrados antes da prova válida. GREEN recompilado explicitamente: três timeouts + normal PASS. Reexecutados `check-content-packages.py` (FP real incluído) e `check-content-frontend.py`: PASS; referências FP intactas. Falha de associação Job e drivers que recusam cancelamento não foram injetados no teste.
 
 ## Documentação oficial consultada
 
