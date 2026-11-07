@@ -935,6 +935,18 @@ static uint32_t *decode_palette_texture(uint32_t src, int w, int h,
         }
         out[i] = a << 24 | r << 16 | g << 8 | b;
     }
+    /* RGB5_A1 / RGBA4: paleta toda alpha 0 → alpha-test mata cena.
+     * Força opaco (mesmo padrão convert_teximage bpp==4). */
+    if (kind == 3u || kind == 4u) {
+        bool any_a = false;
+        for (i = 0; i < pixels; i++) {
+            if (out[i] & 0xFF000000u) { any_a = true; break; }
+        }
+        if (!any_a) {
+            for (i = 0; i < pixels; i++)
+                out[i] |= 0xFF000000u;
+        }
+    }
     return out;
 }
 

@@ -87,10 +87,13 @@ static void video(const void *data, unsigned width, unsigned height, size_t pitc
         int dump_now = g_dump_path && data &&
             (dump_dir_on ? (fi % (unsigned)dump_stride == 0) :
              (!g_target_frames || g_video_frames == g_target_frames));
-    if (dump_now) {
+        /* Sempre gravar PPM final no ultimo frame, mesmo com DUMP_DIR */
+        int is_final = g_dump_path && data && g_target_frames &&
+                       g_video_frames == g_target_frames;
+    if (dump_now || is_final) {
         char p_file[512];
         const char *p_target = g_dump_path;
-        if (dump_dir_on) {
+        if (dump_dir_on && !is_final) {
             _snprintf(p_file, sizeof(p_file), "%s\\frame_%04u.ppm",
                       dump_dir, fi);
             p_target = p_file;
