@@ -36,6 +36,7 @@
   <ItemGroup>
     <ClCompile Include="..\src\core\libretro_core.c" />
     <ClCompile Include="..\src\debug\log.c" />
+    <ClCompile Include="..\src\debug\perf.c" />
     <ClCompile Include="..\src\debug\disasm.c" />
     <ClCompile Include="..\src\debug\trace.c" />
     <ClCompile Include="..\src\memory\memory.c" />

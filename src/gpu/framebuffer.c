@@ -3,6 +3,7 @@
 #include "framebuffer.h"
 #include "../memory/memory.h"
 #include "../debug/log.h"
+#include "../debug/perf.h"
 
 static uint32_t *g_fb = NULL;
 
@@ -32,8 +33,10 @@ void zfb_clear(uint32_t color) {
 }
 
 void zfb_set_pixel(int x, int y, uint32_t color) {
-    if (!g_fb || x < 0 || y < 0 || x >= ZFB_WIDTH || y >= ZFB_HEIGHT) return;
-    g_fb[y * ZFB_WIDTH + x] = color;
+    uint64_t start = zperf_begin();
+    if (g_fb && x >= 0 && y >= 0 && x < ZFB_WIDTH && y < ZFB_HEIGHT)
+        g_fb[y * ZFB_WIDTH + x] = color;
+    zperf_end(ZPERF_ZFB_SET_PIXEL, start, 1);
 }
 
 uint32_t zfb_get_pixel(int x, int y) {

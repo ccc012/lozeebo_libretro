@@ -14,6 +14,7 @@
 #include "../cpu/cpu.h"
 #include "../memory/memory.h"
 #include "../debug/log.h"
+#include "../debug/perf.h"
 
 void zbrew_mark_frame(void);
 
@@ -429,11 +430,13 @@ void zegl_handle(uint32_t slot)
  * Não fabrica pixels: métricas visuais devem refletir somente desenho real. */
 void zegl_autopresent(void)
 {
+    uint64_t perf_start = zperf_begin();
     /* Host presentation is not a guest ABI call. Preserve R0: the guest may
      * carry a live value across retro_run frame boundaries. */
     uint32_t r0 = g_cpu.r[0];
     zbrew_mark_frame();
     g_cpu.r[0] = r0;
+    zperf_end(ZPERF_AUTOPRESENT, perf_start, ZFB_WIDTH * ZFB_HEIGHT);
 }
 
 /* ================= Rasterizador de software GLES 1.x ==================
@@ -1044,6 +1047,8 @@ static bool transform_vertex(int idx, zgl_vtx_t *out)
 
 static uint32_t sample_texture(const zgl_texture_t *t, float u, float v)
 {
+    uint64_t perf_start = zperf_begin();
+    uint32_t result;
     int x, y;
     u -= floorf(u);
     v -= floorf(v);
@@ -1053,12 +1058,16 @@ static uint32_t sample_texture(const zgl_texture_t *t, float u, float v)
     if (y >= t->h) y = t->h - 1;
     if (x < 0) x = 0;
     if (y < 0) y = 0;
-    return t->pix[y * t->w + x];
+    result = t->pix[y * t->w + x];
+    zperf_end(ZPERF_SAMPLE_TEXTURE, perf_start, 1);
+    return result;
 }
 
 static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
                             const zgl_vtx_t *v2)
 {
+    uint64_t perf_start = zperf_begin();
+    uint64_t perf_pixels = 0;
     uint32_t *fb = zfb_pixels();
     const zgl_texture_t *tex = NULL;
     float area, inv_area;
@@ -1133,13 +1142,21 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
     }
 
     if (!fb) { LOGD("raster: fb == NULL!"); return; }
-    for (y = miny; y < maxy; y++) {
-        for (x = minx; x < maxx; x++) {
+    {
+        const float dw0dx = (v1->sy - v2->sy) * inv_area;
+        const float dw1dx = (v2->sy - v0->sy) * inv_area;
+        const float dw0dy = (v2->sx - v1->sx) * inv_area;
+        const float dw1dy = (v0->sx - v2->sx) * inv_area;
+        const float start_px = (float)minx + 0.5f;
+        const float start_py = (float)miny + 0.5f;
+        float row_w0 = ((v1->sx - start_px) * (v2->sy - start_py) -
+                        (v1->sy - start_py) * (v2->sx - start_px)) * inv_area;
+        float row_w1 = ((v2->sx - start_px) * (v0->sy - start_py) -
+                        (v2->sy - start_py) * (v0->sx - start_px)) * inv_area;
+        for (y = miny; y < maxy; y++) {
+            float w0 = row_w0, w1 = row_w1;
+            for (x = minx; x < maxx; x++, w0 += dw0dx, w1 += dw1dx) {
             float px = (float)x + 0.5f, py = (float)y + 0.5f;
-            float w0 = ((v1->sx - px) * (v2->sy - py) -
-                        (v1->sy - py) * (v2->sx - px)) * inv_area;
-            float w1 = ((v2->sx - px) * (v0->sy - py) -
-                        (v2->sy - py) * (v0->sx - px)) * inv_area;
             float w2 = 1.0f - w0 - w1;
             if (x == 100 && y == 310) {
                 static uint32_t hit_logs = 0;
@@ -1188,6 +1205,7 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
             if (sg > 255) sg = 255;
             if (sb > 255) sb = 255;
             if (g_en_blend) {
+                uint64_t blend_start = zperf_begin();
                 if (sa == 0 && (g_blend_src == 0x0303 || g_blend_src == 0x0301))
                     sa = 255; /* alpha 0 como opaco quando src=ONE_MINUS_* */
                 dst = fb[y * ZFB_WIDTH + x];
@@ -1221,8 +1239,10 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
                 if (sr > 255) sr = 255;
                 if (sg > 255) sg = 255;
                 if (sb > 255) sb = 255;
+                zperf_end(ZPERF_BLEND, blend_start, 1);
             }
             fb[y * ZFB_WIDTH + x] = 0xFF000000u | (sr << 16) | (sg << 8) | sb;
+            perf_pixels++;
             { /* probe write */
                 static uint32_t wp_logs = 0;
                 if (wp_logs < 12 && x == 100 && y == 310) {
@@ -1232,8 +1252,12 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
                     wp_logs++;
                 }
             }
+            row_w0 += dw0dy;
+            row_w1 += dw1dy;
         }
     }
+    }
+    zperf_end(ZPERF_RASTER_TRIANGLE, perf_start, perf_pixels);
 }
 
 /* Teste: quad colorido no canto (ignora dados do jogo, prove rasterizador) */
