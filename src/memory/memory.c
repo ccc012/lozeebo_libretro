@@ -80,8 +80,9 @@ void ztrace_dump(void);
 
 static void log_bad_access(const char *what, uint32_t addr) {
     if (g_bad_access_count < BAD_ACCESS_LOG_LIMIT) {
-        LOGW("memoria: %s invalido em 0x%08X (PC=0x%08X LR=0x%08X SP=0x%08X)",
-             what, addr, g_cpu.r[REG_PC], g_cpu.r[REG_LR], g_cpu.r[REG_SP]);
+        LOGW("memoria: %s invalido em 0x%08X (PC=0x%08X LR=0x%08X SP=0x%08X R0=0x%08X R1=0x%08X R2=0x%08X R3=0x%08X)",
+             what, addr, g_cpu.r[REG_PC], g_cpu.r[REG_LR], g_cpu.r[REG_SP],
+             g_cpu.r[0], g_cpu.r[1], g_cpu.r[2], g_cpu.r[3]);
         if (g_bad_access_count == 0)
             ztrace_dump(); /* primeiro acesso ruim: mostra o caminho ate aqui */
         g_bad_access_count++;

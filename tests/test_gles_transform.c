@@ -49,7 +49,8 @@ uint32_t zbrew_make_interface(const uint32_t *trap_ids, int n_methods,
     return obj;
 }
 
-void zbrew_mark_frame(void) { /* no-op: nao ha loop de frame neste harness */ }
+static int frame_marked;
+void zbrew_mark_frame(void) { frame_marked = 1; }
 int zbrew_ifile_block_write(uint32_t addr, uint32_t len) { (void)addr; (void)len; return 0; }
 uint32_t zbrew_ifile_force_vtbl_read(uint32_t addr) { (void)addr; return 0; }
 void zbrew_stack_arg_shift(bool on) { (void)on; }
@@ -104,6 +105,12 @@ int main(void) {
     if (!zfb_init())  { fprintf(stderr, "zfb_init falhou\n");  return 1; }
     memset(&g_cpu, 0, sizeof(g_cpu));
     g_cpu.r[REG_SP] = ZMEM_STACK_TOP;
+    g_cpu.r[0] = 0xE1A02085u;
+    zegl_autopresent();
+    if (g_cpu.r[0] != 0xE1A02085u || !frame_marked) {
+        fprintf(stderr, "autopresent corrompeu ABI\n");
+        return 1;
+    }
 
     /* dados de vertice/texcoord na regiao de heap (mesmo padrao real:
      * ponteiros de heap 0x1001xxxx observados no log do Family Pack) */

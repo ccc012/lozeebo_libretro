@@ -429,7 +429,11 @@ void zegl_handle(uint32_t slot)
  * Não fabrica pixels: métricas visuais devem refletir somente desenho real. */
 void zegl_autopresent(void)
 {
-    zegl_handle(26); /* eglSwapBuffers */
+    /* Host presentation is not a guest ABI call. Preserve R0: the guest may
+     * carry a live value across retro_run frame boundaries. */
+    uint32_t r0 = g_cpu.r[0];
+    zbrew_mark_frame();
+    g_cpu.r[0] = r0;
 }
 
 /* ================= Rasterizador de software GLES 1.x ==================
