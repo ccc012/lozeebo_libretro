@@ -18,5 +18,14 @@ if ($Seq) { $env:ZEEMU_SMOKE_SEQ = $Seq } else { Remove-Item Env:ZEEMU_SMOKE_SEQ
    (Join-Path $root "$Build\lozeebo_libretro.dll") $Mod `
    (Join-Path $out "final.ppm") $Frames 2> (Join-Path $out "run.log")
 $code = $LASTEXITCODE
+$ppm = Join-Path $out "final.ppm"
 Select-String (Join-Path $out "run.log") -Pattern "SMOKE-TIMING|SMOKE-SUMMARY|SMOKE-SEQ|hid-button|hid-position" | ForEach-Object Line
+if ($code -eq 0 -and (Test-Path $ppm)) {
+    $check = Join-Path $out "check"
+    New-Item -ItemType Directory -Force $check | Out-Null
+    Copy-Item $ppm (Join-Path $check "frame_0000.ppm") -Force
+    python (Join-Path $root "tools\fp-visual-nav\classify_ppm.py") $check
+    Remove-Item $check -Recurse -Force
+    if ($LASTEXITCODE -ne 0) { Write-Error "Family Pack final frame is solid" }
+}
 exit $code
