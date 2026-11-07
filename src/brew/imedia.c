@@ -334,10 +334,9 @@ void zbrew_handle_media(uint32_t id) {
             m->notify_enabled = true;
             LOGI("IMedia_RegisterNotify: cb=0x%08X user=0x%08X",
                  m->notify_cb, m->notify_user);
-            /* Alguns jogos (Pac-Mania e Action Hero) nao chamam Play depois
-             * de registrar a notificacao. Action Hero carrega MP3 no heap. */
-            if (m->state == ZMEDIA_STATE_READY &&
-                (m->addr < ZMEM_HEAP_BASE || m->is_mp3)) {
+            /* Pac-Mania/AH/Ovos: RegisterNotify apos SetMediaData e nao
+             * chamam Play. Ovos PCM no heap — auto-Play cobre. */
+            if (m->state == ZMEDIA_STATE_READY && m->addr && m->bytes) {
                 g_cpu.r[0] = obj;
                 zbrew_handle_media(ZT_MEDIA_PLAY);
                 return;
@@ -452,16 +451,25 @@ void zbrew_handle_media(uint32_t id) {
             }
         }
         if (m->notify_cb) {
-            uint32_t ms = media_time_ms(m);
-            /* MIDI/MP3: sem DONE imediato (time_ms=0) — jogo re-Playa em loop. */
+            /* START se voz/stream ativa. PCM curto Ovos: notify sync
+             * no Play faz guest Stop antes do zaudio_render do frame
+             * → audio=0 mesmo com mixer ok. Adia START PCM. */
             uint32_t status = MM_STATUS_DONE;
-            if (m->clsid == AEECLSID_MEDIAMIDI ||
-                m->is_mp3 || m->clsid == AEECLSID_MEDIAMP3 ||
-                m->mp3_stream >= 0 || ms > 1000u)
+            if (m->state == ZMEDIA_STATE_PLAY ||
+                m->voice >= 0 || m->mp3_stream >= 0 ||
+                m->clsid == AEECLSID_MEDIAMIDI ||
+                m->is_mp3 || m->clsid == AEECLSID_MEDIAMP3)
                 status = MM_STATUS_START;
-            media_notify(m, MM_CMD_PLAY, 0, status);
-            if (status == MM_STATUS_DONE)
-                m->state = m->bytes ? ZMEDIA_STATE_READY : ZMEDIA_STATE_IDLE;
+            if (status == MM_STATUS_START && m->voice >= 0 &&
+                !m->is_mp3 && m->clsid != AEECLSID_MEDIAMP3 &&
+                m->clsid != AEECLSID_MEDIAMIDI) {
+                /* PCM: sem notify sync; voz toca ate o fim no mixer. */
+            } else {
+                media_notify(m, MM_CMD_PLAY, 0, status);
+                if (status == MM_STATUS_DONE)
+                    m->state = m->bytes ? ZMEDIA_STATE_READY
+                                        : ZMEDIA_STATE_IDLE;
+            }
         }
         g_cpu.r[0] = 0;
         break;

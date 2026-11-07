@@ -30,8 +30,8 @@ DLL deploy: SHA256 `638D14381D37C9C12C2C7D21D3813D9D3E5F13CF454F36B1A2F19F1F8D93
 | `re4-scene` | RE4 cena/UI pós-pixels ATC | `front/re4-scene` @ `D:\zeebo-worktrees\re4-scene` | — | `merged` | ATC `62f584f` | Próximo key10; preservar 4729 cores |
 | `zuma-stable` | Zuma pós-tex2d estabilidade 900f SUMMARY | `front/zuma-stable` @ `D:\zeebo-worktrees\zuma-stable` | — | `merged` | 900f exit 0; RE4 300f exit 0 | Próximo key10; harness sem SUMMARY |
 | `fp-input` | Family Pack input pós-menu | `front/fp-input` @ `D:\zeebo-worktrees\fp-input` | — | `parked` | áudio ~489k OK | HID/Register path |
-| `ovos-scene` | Ovos cena reconhecível | `front/ovos-scene` @ `D:\zeebo-worktrees\ovos-scene` | — | `parked` | bitmap unificado | Visual + input |
-| `ovos-playable` | Ovos baseline/gate @ 9e21101 | `front/ovos-playable` @ Temp opencode | — | `handoff` | varied=1 ok; áudio=0 | Visual QA + IMedia_Play; ver handoff 20261107 |
+| `ovos-scene` | Ovos cena reconhecível | `front/ovos-scene` @ `D:\zeebo-worktrees\ovos-scene` | — | `superseded` | bitmap unificado | ver ovos-playable |
+| `ovos-playable` | Ovos JOGÁVEL proof | `front/ovos-playable` @ Temp opencode | — | `proof` | mixer+autoPlay; ovo amarelo; audio>0; gate+fp PASS | pós-ovo gameplay; handoff 20261107b |
 | `rea-runtime` | REA runtime Infuse (oracle) | `front/rea-runtime` @ `D:\zeebo-worktrees\rea-runtime` | — | `merged` | contrato `c4fa455` | Configurar GHIDRA_INSTALL_DIR antes de nova análise |
 | `repo-hygiene` | Organizar repo/docs/GitHub | `front/repo-hygiene` @ `D:\zeebo-worktrees\repo-hygiene` | — | `merged-partial` | audit/index/templates integrados | README/.gitignore ficam branch por conflito WIP |
 | `fp-input-local` | Controle/menu/minigame FP | `front/fp-input-local` @ Temp opencode | — | `merged-partial` | B/voltar corrigido | Localizar pacote 277229/data.vfs; validar navegação |

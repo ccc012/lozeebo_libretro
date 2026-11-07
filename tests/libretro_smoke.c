@@ -75,13 +75,24 @@ static void video(const void *data, unsigned width, unsigned height, size_t pitc
     if ((g_video_frames++ % 60) == 0)
         fprintf(stderr, "[VIDEO] %ux%u pitch=%zu first=0x%08X\n",
                 width, height, pitch, first_pixel);
-    if (g_dump_path && data && (!g_target_frames || g_video_frames == g_target_frames)) {
+    /* DUMP_DIR: stride (default 10). Sem DUMP_DIR: so frame-alvo. */
+    {
         const char *dump_dir = getenv("ZEEMU_SMOKE_DUMP_DIR");
+        int dump_stride = 10;
+        const char *ds = getenv("ZEEMU_SMOKE_DUMP_STRIDE");
+        if (ds && ds[0]) dump_stride = atoi(ds);
+        if (dump_stride < 1) dump_stride = 1;
+        int dump_dir_on = dump_dir && dump_dir[0];
+        unsigned fi = g_video_frames ? g_video_frames - 1 : 0;
+        int dump_now = g_dump_path && data &&
+            (dump_dir_on ? (fi % (unsigned)dump_stride == 0) :
+             (!g_target_frames || g_video_frames == g_target_frames));
+    if (dump_now) {
         char p_file[512];
         const char *p_target = g_dump_path;
-        if (dump_dir && dump_dir[0]) {
+        if (dump_dir_on) {
             _snprintf(p_file, sizeof(p_file), "%s\\frame_%04u.ppm",
-                      dump_dir, g_video_frames - 1);
+                      dump_dir, fi);
             p_target = p_file;
         }
         /* reescreve a cada frame; o arquivo final = ultimo frame */
@@ -101,6 +112,7 @@ static void video(const void *data, unsigned width, unsigned height, size_t pitc
             }
             fclose(f);
         }
+    }
     }
 }
 

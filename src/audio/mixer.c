@@ -67,6 +67,7 @@ void zaudio_render(int16_t *out, uint32_t frames) {
             if (r < -32768) r = -32768;
             out[f * 2]     = (int16_t)l;
             out[f * 2 + 1] = (int16_t)r;
+            voice->pos_fp += voice->step_fp;
         }
     }
 }
