@@ -1106,6 +1106,17 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
     if (miny < 0) miny = 0;
     if (maxx > ZFB_WIDTH) maxx = ZFB_WIDTH;
     if (maxy > ZFB_HEIGHT) maxy = ZFB_HEIGHT;
+    /* Scissor invariavel por draw: corte o bbox uma vez, nao por fragmento. */
+    if (g_en_scissor) {
+        uint32_t sx1 = g_gl_scissor_x + g_gl_scissor_w;
+        uint32_t sy1 = g_gl_scissor_y + g_gl_scissor_h;
+        if (minx < (int)g_gl_scissor_x) minx = (int)g_gl_scissor_x;
+        if (miny < (int)g_gl_scissor_y) miny = (int)g_gl_scissor_y;
+        if (maxx > (int)sx1) maxx = (int)sx1;
+        if (maxy > (int)sy1) maxy = (int)sy1;
+    }
+    if (minx >= maxx || miny >= maxy)
+        return;
 
     {
         static uint32_t bbox_logs = 0;
@@ -1119,13 +1130,7 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
 
     if (!fb) { LOGD("raster: fb == NULL!"); return; }
     for (y = miny; y < maxy; y++) {
-        if (g_en_scissor && (y < (int)g_gl_scissor_y ||
-            y >= (int)(g_gl_scissor_y + g_gl_scissor_h)))
-            continue;
         for (x = minx; x < maxx; x++) {
-            if (g_en_scissor && (x < (int)g_gl_scissor_x ||
-                x >= (int)(g_gl_scissor_x + g_gl_scissor_w)))
-                continue;
             float px = (float)x + 0.5f, py = (float)y + 0.5f;
             float w0 = ((v1->sx - px) * (v2->sy - py) -
                         (v1->sy - py) * (v2->sx - px)) * inv_area;
