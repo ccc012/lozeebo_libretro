@@ -2130,10 +2130,9 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
     }
 
     case GLFN_GetError:
-        /* GLES: R0=erro. IGLES soft (6E0C4): out em a0, LDR R0,[out]. */
+        /* Wrapper GLES chama sem this: retorno e somente R0. a0 pode ser
+         * estado do chamador; grava-lo corrompe o ponteiro usado pelo PNG. */
         g_cpu.r[0] = 0;
-        if (a0 >= 0x10000000u && a0 < 0x30000000u)
-            zmem_write32(a0, 0);
         break;
 
     case GLFN_GetIntegerv:
