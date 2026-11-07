@@ -51,7 +51,6 @@ void zperf_set_option(int enabled)
         ensure_freq();
     g_enabled = enabled ? 1 : 0;
 }
-
 uint64_t zperf_begin(void)
 {
     LARGE_INTEGER now;
