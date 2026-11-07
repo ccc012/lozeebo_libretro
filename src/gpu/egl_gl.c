@@ -1205,14 +1205,18 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
                     sg = (sg * fac_src + dg * fac_dst) / 255;
                     sb = (sb * fac_src + db * fac_dst) / 255;
                 } else {
-                    /* GL_FUNC_SUBTRACT: result = src*fac_src - dst*fac_dst */
-                    sr = (sr * fac_src - dr * fac_dst) / 255;
-                    sg = (sg * fac_src - dg * fac_dst) / 255;
-                    sb = (sb * fac_src - db * fac_dst) / 255;
+                    /* GL_FUNC_SUBTRACT: signed intermediates; unsigned underflow
+                     * saturated negative channels to white. */
+                    int rr = ((int)sr * fac_src - (int)dr * fac_dst) / 255;
+                    int rg = ((int)sg * fac_src - (int)dg * fac_dst) / 255;
+                    int rb = ((int)sb * fac_src - (int)db * fac_dst) / 255;
+                    sr = (uint32_t)(rr < 0 ? 0 : rr);
+                    sg = (uint32_t)(rg < 0 ? 0 : rg);
+                    sb = (uint32_t)(rb < 0 ? 0 : rb);
                 }
-                if (sr < 0) sr = 0; if (sr > 255) sr = 255;
-                if (sg < 0) sg = 0; if (sg > 255) sg = 255;
-                if (sb < 0) sb = 0; if (sb > 255) sb = 255;
+                if (sr > 255) sr = 255;
+                if (sg > 255) sg = 255;
+                if (sb > 255) sb = 255;
             }
             fb[y * ZFB_WIDTH + x] = 0xFF000000u | (sr << 16) | (sg << 8) | sb;
             { /* probe write */
