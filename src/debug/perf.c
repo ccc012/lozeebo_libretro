@@ -23,13 +23,33 @@ static void report(void)
                 (unsigned long long)g_counters[i].pixels);
 }
 
+static void ensure_freq(void)
+{
+    static int atexit_set;
+    if (!g_freq.QuadPart)
+        QueryPerformanceFrequency(&g_freq);
+    if (!atexit_set) {
+        atexit(report);
+        atexit_set = 1;
+    }
+}
+
 int zperf_enabled(void)
 {
     if (g_enabled < 0) {
         g_enabled = getenv("ZEEMU_PROFILE_CORE") != NULL;
-        if (g_enabled) { QueryPerformanceFrequency(&g_freq); atexit(report); }
+        if (g_enabled) ensure_freq();
     }
     return g_enabled;
+}
+
+void zperf_set_option(int enabled)
+{
+    if (getenv("ZEEMU_PROFILE_CORE") != NULL)
+        enabled = 1;
+    if (enabled)
+        ensure_freq();
+    g_enabled = enabled ? 1 : 0;
 }
 
 uint64_t zperf_begin(void)

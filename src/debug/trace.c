@@ -17,22 +17,41 @@ static uint32_t g_hist_done = 0;
 
 void ztrace_pc(uint32_t pc);
 void ztrace_dump(void);
+void ztrace_set_profile_pc(int enabled);
 static void zhist_dump(void);
+
+/* Release gate: -1 lazy; 0/1 from option (env ganha). */
+static int g_trace_enabled = -1;
+/* Histograma: -1 lazy; so PROFILE_PC / option profile. */
+static int g_profile_pc = -1;
+
+void ztrace_set_profile_pc(int enabled)
+{
+    /* Env ZEEMU_PROFILE_PC / ZEEMU_TRACE_PC ganha se setada. */
+    int env_prof = getenv("ZEEMU_PROFILE_PC") != NULL;
+    int env_trace = getenv("ZEEMU_TRACE_PC") != NULL;
+    if (env_prof || env_trace) {
+        g_trace_enabled = 1;
+        g_profile_pc = env_prof ? 1 : 0;
+        return;
+    }
+    g_trace_enabled = enabled ? 1 : 0;
+    g_profile_pc = enabled ? 1 : 0;
+}
 
 void ztrace_pc(uint32_t pc) {
 #if defined(NDEBUG)
-    /* Release: ring + hist so sob ZEEMU_TRACE_PC / ZEEMU_PROFILE_PC. */
-    static int enabled = -1;
-    if (enabled < 0)
-        enabled = (getenv("ZEEMU_TRACE_PC") != NULL) ||
-                  (getenv("ZEEMU_PROFILE_PC") != NULL);
-    if (!enabled) return;
+    /* Release: ring + hist so sob ZEEMU_TRACE_PC / ZEEMU_PROFILE_PC / option. */
+    if (g_trace_enabled < 0)
+        g_trace_enabled = (getenv("ZEEMU_TRACE_PC") != NULL) ||
+                          (getenv("ZEEMU_PROFILE_PC") != NULL);
+    if (!g_trace_enabled) return;
 #endif
     {
-        static int profile = -1;
         g_trace[g_trace_pos++ & (ZTRACE_SIZE - 1)] = pc;
-        if (profile < 0) profile = getenv("ZEEMU_PROFILE_PC") != NULL;
-        if (!profile) return;
+        if (g_profile_pc < 0)
+            g_profile_pc = getenv("ZEEMU_PROFILE_PC") != NULL;
+        if (!g_profile_pc) return;
         if ((pc & ~0xFFFu) < 0x01000000u)
             g_hist[(pc >> 12) & (ZHIST_BUCKETS - 1)]++;
         if (!g_hist_done) {

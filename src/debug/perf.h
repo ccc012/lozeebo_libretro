@@ -16,5 +16,7 @@ typedef enum {
 uint64_t zperf_begin(void);
 void zperf_end(zperf_id_t id, uint64_t start, uint64_t pixels);
 int zperf_enabled(void);
+/* Core option; ZEEMU_PROFILE_CORE env ganha se setada. */
+void zperf_set_option(int enabled);
 
 #endif
