@@ -50,6 +50,10 @@ uint32_t zbrew_make_interface(const uint32_t *trap_ids, int n_methods,
 }
 
 void zbrew_mark_frame(void) { /* no-op: nao ha loop de frame neste harness */ }
+int zbrew_ifile_block_write(uint32_t addr, uint32_t len) { (void)addr; (void)len; return 0; }
+uint32_t zbrew_ifile_force_vtbl_read(uint32_t addr) { (void)addr; return 0; }
+void zbrew_stack_arg_shift(bool on) { (void)on; }
+uint32_t zboot_get_applet_clsid(void) { return 0; }
 
 /* Ordem alfabetica das funcoes GL na tabela direta (ZGL_DIRECT_BASE + fn),
  * espelhando o enum interno (static) de egl_gl.c. Indices re-derivados a
@@ -178,5 +182,27 @@ int main(void) {
     else
         printf("(%d pixels nao-zero encontrados, mostrando ate 12)\n", printed);
 
+    /* Alpha zero sem blend/test preserva RGB; com SRC_ALPHA nao altera destino. */
+    gl_call(T_DisableClientState, 0x8078u, 0, 0, 0);
+    gl_call(T_DisableClientState, 0x8076u, 0, 0, 0);
+    gl_call(T_Color4x, FX(1.f), 0, 0, 0);
+    gl_call(T_ClearColorx, 0, 0, FX(1.f), FX(1.f));
+    gl_call(T_Clear, 0x4000u, 0, 0, 0);
+    gl_call(T_DrawArrays, 0x6u, 0, 4, 0);
+    if ((fb[240 * ZFB_WIDTH + 320] & 0x00FFFFFFu) != 0x00FF0000u) {
+        fprintf(stderr, "alpha-zero opaco nao preservou RGB: 0x%08X\n",
+                fb[240 * ZFB_WIDTH + 320]);
+        return 2;
+    }
+    gl_call(T_Clear, 0x4000u, 0, 0, 0);
+    gl_call(T_Enable, 0x0BE2u, 0, 0, 0); /* GL_BLEND */
+    gl_call(T_BlendFunc, 0x0302u, 0x0303u, 0, 0);
+    gl_call(T_DrawArrays, 0x6u, 0, 4, 0);
+    if ((fb[240 * ZFB_WIDTH + 320] & 0x00FFFFFFu) != 0x000000FFu) {
+        fprintf(stderr, "alpha-zero blended alterou destino: 0x%08X\n",
+                fb[240 * ZFB_WIDTH + 320]);
+        return 3;
+    }
+    puts("alpha-zero opaque/blended: OK");
     return 0;
 }
