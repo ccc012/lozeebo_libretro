@@ -54,6 +54,9 @@ void ztrace_dump(void);
 
 /* PC valido para fetch: RAM, heap ou stack (BREW pode materializar
  * thunks no heap/stack). Fora disso a CPU descarrilou. */
+static int try_hle_empty_count(uint32_t instr);
+static int try_hle_word_fill(uint32_t instr);
+
 static bool pc_fetchable(uint32_t pc) {
     if (pc < ZMEM_RAM_SIZE) return true;
     if (pc >= ZMEM_HEAP_BASE && pc < ZMEM_HEAP_BASE + ZMEM_HEAP_SIZE)
@@ -971,6 +974,8 @@ void zcpu_step(void) {
     } else {
         /* ARM: 32-bit. Durante execucao, R15 = pc + 8 */
         uint32_t instr = zmem_read32(pc & ~3u);
+        if (try_hle_empty_count(instr) || try_hle_word_fill(instr))
+            return;
         g_cpu.r[REG_PC] = pc + 8;
         zarm_execute(instr);
         if (!zcpu_branched)
@@ -987,11 +992,10 @@ void zcpu_step(void) {
 #if defined(_MSC_VER)
 #pragma optimize("", off)
 #endif
-static int try_hle_empty_count(void) {
+static int try_hle_empty_count(uint32_t instr) {
     uint32_t pc, w0, w1, w2, a, b, n;
-    if (g_cpu.cpsr & CPSR_T) return 0;
     pc = g_cpu.r[REG_PC] & ~3u;
-    w0 = zmem_read32(pc);
+    w0 = instr;
     w1 = zmem_read32(pc + 4u);
     w2 = zmem_read32(pc + 8u);
     /* Mid-loop: PC no ADD ou no B — recua ate o CMP. */
@@ -1060,16 +1064,15 @@ static int try_hle_empty_count(void) {
  *
  * MSVC /O2 ja apagou o corpo desta funcao (dead-code falso); manter
  * optimize off + words[] spill explicito. */
-static int try_hle_word_fill(void) {
+static int try_hle_word_fill(uint32_t instr) {
     uint32_t pc, w0, w1, w2, w3, w4, base, idx, limit, dst, bytes, n, k, v;
     uint32_t *host;
     void *p;
     int32_t off;
     uint32_t imm8, rot;
 
-    if (g_cpu.cpsr & CPSR_T) return 0;
     pc = g_cpu.r[REG_PC] & ~3u;
-    w0 = zmem_read32(pc);
+    w0 = instr;
     /* Mid-loop: PC no STR — recua 4. */
     if (w0 == 0xE7821100u) {
         uint32_t prev = zmem_read32(pc - 4u);
@@ -1137,10 +1140,6 @@ uint32_t zcpu_run(uint32_t max) {
     uint32_t i;
     for (i = 0; i < max; i++) {
         if (g_cpu.halted) break;
-        if (try_hle_empty_count())
-            continue;
-        if (try_hle_word_fill())
-            continue;
         zcpu_step();
     }
     return i;
