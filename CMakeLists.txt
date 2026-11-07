@@ -37,6 +37,7 @@ set(ZEEBO_CORE_SOURCES
     src/cpu/flags.c
     src/debug/disasm.c
     src/debug/log.c
+    src/debug/perf.c
     src/debug/trace.c
     src/gpu/draw.c
     src/gpu/egl_gl.c

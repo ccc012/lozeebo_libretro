@@ -1142,21 +1142,13 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
     }
 
     if (!fb) { LOGD("raster: fb == NULL!"); return; }
-    {
-        const float dw0dx = (v1->sy - v2->sy) * inv_area;
-        const float dw1dx = (v2->sy - v0->sy) * inv_area;
-        const float dw0dy = (v2->sx - v1->sx) * inv_area;
-        const float dw1dy = (v0->sx - v2->sx) * inv_area;
-        const float start_px = (float)minx + 0.5f;
-        const float start_py = (float)miny + 0.5f;
-        float row_w0 = ((v1->sx - start_px) * (v2->sy - start_py) -
-                        (v1->sy - start_py) * (v2->sx - start_px)) * inv_area;
-        float row_w1 = ((v2->sx - start_px) * (v0->sy - start_py) -
-                        (v2->sy - start_py) * (v0->sx - start_px)) * inv_area;
-        for (y = miny; y < maxy; y++) {
-            float w0 = row_w0, w1 = row_w1;
-            for (x = minx; x < maxx; x++, w0 += dw0dx, w1 += dw1dx) {
+    for (y = miny; y < maxy; y++) {
+        for (x = minx; x < maxx; x++) {
             float px = (float)x + 0.5f, py = (float)y + 0.5f;
+            float w0 = ((v1->sx - px) * (v2->sy - py) -
+                        (v1->sy - py) * (v2->sx - px)) * inv_area;
+            float w1 = ((v2->sx - px) * (v0->sy - py) -
+                        (v2->sy - py) * (v0->sx - px)) * inv_area;
             float w2 = 1.0f - w0 - w1;
             if (x == 100 && y == 310) {
                 static uint32_t hit_logs = 0;
@@ -1252,10 +1244,7 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
                     wp_logs++;
                 }
             }
-            row_w0 += dw0dy;
-            row_w1 += dw1dy;
         }
-    }
     }
     zperf_end(ZPERF_RASTER_TRIANGLE, perf_start, perf_pixels);
 }
