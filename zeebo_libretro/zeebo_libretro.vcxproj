@@ -49,7 +49,11 @@
     <ClCompile Include="..\src\gpu\draw.c" />
     <ClCompile Include="..\src\gpu\egl_gl.c" />
     <ClCompile Include="..\src\audio\audio.c" />
+    <ClCompile Include="..\src\audio\adpcm.c" />
+    <ClCompile Include="..\src\audio\midi.c" />
+    <ClCompile Include="..\src\audio\miniz_tinfl.c" />
     <ClCompile Include="..\src\audio\mixer.c" />
+    <ClCompile Include="..\src\audio\mp3.c" />
     <ClCompile Include="..\src\audio\pcm.c" />
     <ClCompile Include="..\src\input\input.c" />
     <ClCompile Include="..\src\brew\brew.c" />
@@ -58,12 +62,19 @@
     <ClCompile Include="..\src\brew\ishell.c" />
     <ClCompile Include="..\src\brew\imemory.c" />
     <ClCompile Include="..\src\brew\idisplay.c" />
+    <ClCompile Include="..\src\brew\idisplay_real.c" />
     <ClCompile Include="..\src\brew\ibitmap.c" />
+    <ClCompile Include="..\src\brew\iimage.c" />
     <ClCompile Include="..\src\brew\ifile.c" />
+    <ClCompile Include="..\src\brew\ifont.c" />
     <ClCompile Include="..\src\brew\isound.c" />
+    <ClCompile Include="..\src\brew\imedia.c" />
+    <ClCompile Include="..\src\brew\imedia_util.c" />
+    <ClCompile Include="..\src\brew\isource.c" />
     <ClCompile Include="..\src\loader\mod_loader.c" />
     <ClCompile Include="..\src\loader\mif_parser.c" />
     <ClCompile Include="..\src\loader\bar_parser.c" />
+    <ClCompile Include="..\src\loader\zip_extract.c" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
