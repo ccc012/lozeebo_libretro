@@ -86,6 +86,7 @@ static bool hid_evt_pop(uint32_t *id, uint32_t *uid, bool *down) {
  * via o signal de RegisterForPositionChange. Espelhamos o D-pad (ver
  * zinput_left_stick_*) para que o menu do Family Pack possa ser navegado
  * com o direcional sem precisar de joystick analogico real. */
+static uint32_t g_hid_sample_lx = 0x8000u, g_hid_sample_ly = 0x8000u;
 static uint32_t g_hid_axis_lx = 0x8000u;
 static uint32_t g_hid_axis_ly = 0x8000u;
 static uint32_t g_hid_axis_rx = 0x8000u;
@@ -185,6 +186,8 @@ typedef struct {
     uint32_t user;
     uint32_t arg1;
     uint32_t arg2;
+    uint32_t position_lx, position_ly;
+    bool position;
     const char *label;
 } zsignal_pending_t;
 static uint32_t g_signal_vtbl = 0;
@@ -984,6 +987,12 @@ static void zboot_signal_queue_object(uint32_t signal_obj, uint32_t callback,
     g_signal_queue[g_signal_queue_count].user = user;
     g_signal_queue[g_signal_queue_count].arg1 = arg1;
     g_signal_queue[g_signal_queue_count].arg2 = arg2;
+    /* Position callbacks query state, not an event payload. Preserve each
+     * sample until its callback runs (held/neutral/held while guest is busy). */
+    g_signal_queue[g_signal_queue_count].position =
+        signal_obj && signal_obj == g_hid_position_signal;
+    g_signal_queue[g_signal_queue_count].position_lx = g_hid_sample_lx;
+    g_signal_queue[g_signal_queue_count].position_ly = g_hid_sample_ly;
     g_signal_queue[g_signal_queue_count].label = label;
     g_signal_queue_count++;
 }
@@ -1067,6 +1076,10 @@ static bool zboot_signal_drain_one(void) {
             return false;
         }
     }
+    if (p.position) {
+        g_hid_axis_lx = p.position_lx;
+        g_hid_axis_ly = p.position_ly;
+    }
     LOGI("boot: sinal (%s) callback=0x%08X user=0x%08X",
          p.label ? p.label : "?", p.callback, p.user);
     g_state = BOOT_SIGNAL_CALL;
@@ -1133,6 +1146,7 @@ void zboot_start(uint32_t entry, uint32_t applet_clsid) {
     g_hid_connect_signal = 0;
     g_hid_connect_pending = false;
     g_hid_connect_event_avail = true;
+    g_hid_sample_lx = g_hid_sample_ly = 0x8000u;
     g_hid_axis_lx = 0x8000u;
     g_hid_axis_ly = 0x8000u;
     g_hid_axis_rx = 0x8000u;
@@ -1648,25 +1662,17 @@ void zboot_process_timers(void) {
 
 void zboot_tick(uint32_t elapsed_ms) {
     (void)elapsed_ms;
-    if (g_state != BOOT_RUNNING) return;
+    if (g_state == BOOT_IDLE || g_state == BOOT_FAILED) return;
 
     {
-        uint32_t changed = zinput_pressed();
+        uint32_t changed = zinput_pressed() | zinput_released();
         bool down = true;
         uint32_t bit = 0;
         uint32_t id = 0;
         uint32_t uid = 0;
-        if (!changed) {
-            changed = zinput_released();
-            down = false;
-        }
         if (changed) {
-            /* Botões reais: A/B/C/MENU/BACK. O D-pad fica EXCLUSIVAMENTE
-             * nos eixos analogicos (position, mais abaixo): o Family Pack
-             * navega o menu por GetPositionState/GetMin/GetMax (slots 10-12)
-             * e descarrila se receber button-event do D-pad (crash em
-             * 0xE5053008 no release). O zeemu tambem nao espelha D-pad em
-             * eixos nem os trata como botoes. */
+            /* FP uses position axes; DD also consumes directional button UIDs.
+             * Keep the existing per-title mapping; capture both edge types. */
             /* DD (0x0102F789) remapper @0x740: Start UID 0x0106C402 rejeitado;
              * HOME/Back 0x0106C403 aceito → id 8. FP mantem Start generico. */
             const bool dd = (g_applet_clsid == 0x0102F789u) ||
@@ -1699,6 +1705,7 @@ void zboot_tick(uint32_t elapsed_ms) {
             for (n = 0; n < map_n; n++) {
                 if (!(changed & map[n].bit)) continue;
                 bit = map[n].bit;
+                down = (zinput_key_down() & bit) != 0;
                 id = map[n].id;
                 uid = map[n].uid;
                 hid_evt_push(id, uid, down);
@@ -1715,8 +1722,6 @@ void zboot_tick(uint32_t elapsed_ms) {
                 zboot_signal_fire(g_hid_button_signal, "hid-button");
                 if (getenv("ZEEMU_CB_R4_AS_USER"))
                     g_cpu.r[4] = user;
-                if (zboot_signal_drain_one())
-                    return;
             }
         }
     }
@@ -1728,15 +1733,13 @@ void zboot_tick(uint32_t elapsed_ms) {
     {
         uint32_t lx = zinput_left_stick_x();
         uint32_t ly = zinput_left_stick_y();
-        if (lx != g_hid_axis_lx || ly != g_hid_axis_ly) {
-            g_hid_axis_lx = lx;
-            g_hid_axis_ly = ly;
-            /* Voltou ao centro (release): NAO acorda o signal. O signal de
-             * position so leva o cursor; ao soltar, o jogo chama um handler
-             * de menu via ponteiro nao preparado (crash 0xE5053004). Soltar
-             * o stick so "libera" - nenhum callback espera esse estado. */
-            if (lx == 0x8000u && ly == 0x8000u)
-                return;
+        if (lx != g_hid_sample_lx || ly != g_hid_sample_ly) {
+            g_hid_sample_lx = lx;
+            g_hid_sample_ly = ly;
+            if (!g_hid_position_signal) {
+                g_hid_axis_lx = lx;
+                g_hid_axis_ly = ly;
+            }
             if (g_hid_position_signal) {
                 uint32_t callback = zmem_read32(g_hid_position_signal + 4);
                 uint32_t user = zmem_read32(g_hid_position_signal + 8);
@@ -1745,11 +1748,12 @@ void zboot_tick(uint32_t elapsed_ms) {
                          "user=0x%08X", lx, ly, callback, user);
                 }
                 zboot_signal_fire(g_hid_position_signal, "hid-position");
-                if (zboot_signal_drain_one())
-                    return;
             }
         }
     }
+    /* Capture every poll, even during a guest call; never reenter guest. */
+    if (g_state == BOOT_RUNNING)
+        zboot_signal_drain_one();
 
     /* Timers ficam so em zboot_process_timers (depois desta funcao).
      * Disparar aqui monopolizava BOOT_RUNNING e a thread guest (Start
@@ -3284,14 +3288,11 @@ void zbrew_handle_stub(uint32_t id) {
             }
             break;
         }
-        if (clsid == ZCLSID_HID_DEVICE) { /* GetPositionState(po, pInfo, pNumAxes) */
+        if (clsid == ZCLSID_HID_DEVICE) { /* GetPositionState(po, pInfo): R2 is not an output. */
             uint32_t p_pos = g_cpu.r[1];
             if (p_pos && p_pos < ZDISPLAY_ADDR_MAX && p_pos != g_cpu.r[0])
                 zinput_hid_fill_position(p_pos, g_hid_axis_lx, g_hid_axis_ly,
                                          g_hid_axis_rx, g_hid_axis_ry);
-            if (g_cpu.r[2] && g_cpu.r[2] < ZDISPLAY_ADDR_MAX &&
-                g_cpu.r[2] != g_cpu.r[0])
-                zmem_write32(g_cpu.r[2], 4);
             g_cpu.r[0] = 0;
             break;
         }

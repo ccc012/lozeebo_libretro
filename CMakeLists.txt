@@ -126,6 +126,13 @@ endif()
 if(ZEEBO_BUILD_SMOKE_TEST AND NOT ZEEBO_PLATFORM_CONSOLE)
     add_executable(audio_adpcm_rate tests/audio_adpcm_rate.c
         src/audio/audio.c src/audio/mixer.c src/audio/pcm.c src/audio/adpcm.c)
+    set(INPUT_TEST_SOURCES ${ZEEBO_CORE_SOURCES})
+    list(REMOVE_ITEM INPUT_TEST_SOURCES src/brew/boot.c)
+    add_executable(input_transitions tests/input_transitions.c ${INPUT_TEST_SOURCES})
+    target_include_directories(input_transitions PRIVATE src src/core)
+    if(MSVC)
+        target_compile_definitions(input_transitions PRIVATE _CRT_SECURE_NO_WARNINGS)
+    endif()
     add_executable(libretro_smoke tests/libretro_smoke.c)
     set_target_properties(libretro_smoke PROPERTIES
         C_STANDARD 99
