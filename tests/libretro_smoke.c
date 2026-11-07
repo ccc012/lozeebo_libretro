@@ -8,9 +8,17 @@
 #if defined(_WIN32)
 #include <windows.h>
 typedef HMODULE core_handle_t;
+static uint64_t monotonic_ms(void) { return GetTickCount64(); }
 #else
 #include <dlfcn.h>
+#include <time.h>
 typedef void *core_handle_t;
+static uint64_t monotonic_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
+}
 #endif
 
 #include "../src/core/libretro.h"
@@ -39,6 +47,7 @@ static bool environment(unsigned command, void *data)
 }
 
 static const char *g_dump_path; /* argv[3]: despeja o ultimo frame (PPM) */
+static unsigned g_target_frames;
 static unsigned g_video_frames;
 static size_t g_audio_frames;
 static unsigned g_audio_peak;
@@ -46,6 +55,7 @@ static size_t g_audio_nonzero;
 static uint32_t g_video_first;
 static uint32_t g_video_xor;
 static bool g_video_varied;
+static bool g_video_ever_varied;
 
 static void video(const void *data, unsigned width, unsigned height, size_t pitch)
 {
@@ -61,10 +71,11 @@ static void video(const void *data, unsigned width, unsigned height, size_t pitc
             if (row[x] != first_pixel) g_video_varied = true;
         }
     }
+    if (g_video_varied) g_video_ever_varied = true;
     if ((g_video_frames++ % 60) == 0)
         fprintf(stderr, "[VIDEO] %ux%u pitch=%zu first=0x%08X\n",
                 width, height, pitch, first_pixel);
-    if (g_dump_path && data) {
+    if (g_dump_path && data && (!g_target_frames || g_video_frames == g_target_frames)) {
         const char *dump_dir = getenv("ZEEMU_SMOKE_DUMP_DIR");
         char p_file[512];
         const char *p_target = g_dump_path;
@@ -317,6 +328,8 @@ int main(int argc, char **argv)
     retro_load_game_t retro_load_game;
     retro_unload_game_t retro_unload_game;
     retro_run_t retro_run;
+    uint64_t started_ms;
+    unsigned max_seconds = 0;
 
     if (argc < 3 || argc > 5) {
         fprintf(stderr,
@@ -370,14 +383,32 @@ int main(int argc, char **argv)
         return 5;
     }
 
-    for (frame = 0; frame < (argc == 5 ? (unsigned)atoi(argv[4]) : 180u); ++frame) {
+    {
+        const char *limit = getenv("ZEEMU_SMOKE_MAX_SECONDS");
+        if (limit) max_seconds = (unsigned)atoi(limit);
+    }
+    g_target_frames = argc == 5 ? (unsigned)atoi(argv[4]) : 180u;
+    started_ms = monotonic_ms();
+    for (frame = 0; frame < g_target_frames; ++frame) {
         input_frame = frame;
         retro_run();
+        if (max_seconds && monotonic_ms() - started_ms > (uint64_t)max_seconds * 1000u) {
+            fprintf(stderr, "[SMOKE-TIMEOUT] frame=%u elapsed_ms=%llu limit_s=%u\n",
+                    frame + 1, (unsigned long long)(monotonic_ms() - started_ms), max_seconds);
+            retro_unload_game();
+            retro_deinit();
+            free(rom_data);
+            core_close(core);
+            return 6;
+        }
     }
 
+    fprintf(stderr, "[SMOKE-TIMING] frames=%u elapsed_ms=%llu\n", frame,
+            (unsigned long long)(monotonic_ms() - started_ms));
     fprintf(stderr,
-            "[SMOKE-SUMMARY] video_frames=%u video_first=%08X video_xor=%08X video_varied=%u audio_frames=%zu audio_nonzero=%zu audio_peak=%u\n",
+            "[SMOKE-SUMMARY] video_frames=%u video_first=%08X video_xor=%08X video_varied=%u video_ever_varied=%u audio_frames=%zu audio_nonzero=%zu audio_peak=%u\n",
             g_video_frames, g_video_first, g_video_xor, g_video_varied ? 1u : 0u,
+            g_video_ever_varied ? 1u : 0u,
             g_audio_frames, g_audio_nonzero, g_audio_peak);
     fflush(stderr);
     {

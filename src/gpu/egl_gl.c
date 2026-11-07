@@ -1077,6 +1077,10 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
 
     if (!fb)
         return;
+    /* Triangulos totalmente transparentes nao alteram color buffer. Menus do
+     * Family Pack enviam muitos sprites ocultos; evita varrer 640x480 neles. */
+    if (v0->ca <= 0.f && v1->ca <= 0.f && v2->ca <= 0.f)
+        return;
     /* Zuma: Enable(TEXTURE_2D) pode nao sobreviver; se texcoord client
      * state ligado, amostrar a textura bound. */
     if ((g_en_tex2d || g_va_tex.on) && g_bound_tex < ZGL_MAX_TEXTURES &&
