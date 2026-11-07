@@ -1361,10 +1361,13 @@ void zboot_on_guest_return(void) {
          * Zuma (0x0109AF55): ja tem IShell_SetTimer(0x4814); o fake
          * HandleEvent cancela esse timer e deixa so clears pretos.
          * Ovos (0x010963A5): SetTimer(0x1870) no CreateInstance; evt=2
-         * cancela HID+timer e mata o draw GL. */
+         * cancela HID+timer e mata o draw GL.
+          * Double Dragon (0x0102F789): SetTimer(33ms, 0x239DC) no APP_START;
+          * fake evt=2 cancela timer+HID e entra em retry GRAPHICS CreateInstance. */
         if (g_applet_obj && g_shell_obj && g_applet_clsid != 0x010903C6u &&
             g_applet_clsid != 0x0108AF6Cu && g_applet_clsid != 0x0109AF55u &&
             g_applet_clsid != 0x010963A5u &&
+            g_applet_clsid != 0x0102F789u &&
             !g_thread_fn) {
             uint32_t applet_vtbl = zmem_read32(g_applet_obj);
             uint32_t handle_event = zmem_read32(applet_vtbl + 8);
@@ -1412,10 +1415,11 @@ void zboot_on_guest_return(void) {
         }
         g_state = BOOT_RUNNING;
         g_cpu.halted = true;
-        /* RE4/Quake/NFS: re-registra fake loop. FP/DE/Zuma/Ovos: nao. */
+        /* RE4/Quake/NFS: re-registra fake loop. FP/DE/Zuma/Ovos/DD: nao. */
         if (g_applet_obj && g_state == BOOT_RUNNING &&
             g_applet_clsid != 0x010903C6u && g_applet_clsid != 0x0108AF6Cu &&
             g_applet_clsid != 0x0109AF55u && g_applet_clsid != 0x010963A5u &&
+            g_applet_clsid != 0x0102F789u &&
             !g_thread_fn) {
             uint32_t applet_vtbl = zmem_read32(g_applet_obj);
             uint32_t handle_event = zmem_read32(applet_vtbl + 8);
