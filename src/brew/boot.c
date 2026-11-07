@@ -1667,18 +1667,31 @@ void zboot_tick(uint32_t elapsed_ms) {
              * e descarrila se receber button-event do D-pad (crash em
              * 0xE5053008 no release). O zeemu tambem nao espelha D-pad em
              * eixos nem os trata como botoes. */
-            static const struct {
-                uint32_t bit, id, uid;
-            } map[] = {
+            /* DD (0x0102F789) remapper @0x740: Start UID 0x0106C402 rejeitado;
+             * HOME/Back 0x0106C403 aceito → id 8. FP mantem Start generico. */
+            const bool dd = (g_applet_clsid == 0x0102F789u) ||
+                            (g_boot_clsid == 0x0102F789u);
+            typedef struct { uint32_t bit, id, uid; } zhid_map_t;
+            static const zhid_map_t map_std[] = {
                 { ZKEY_A,     0,  0x0106C40Au },
                 { ZKEY_B,     1,  0x0106C40Bu },
                 { ZKEY_C,     2,  0x0106C40Cu },
                 { ZKEY_MENU,  9,  0x0106C402u },
                 { ZKEY_BACK,  8,  0x0106C403u },
             };
+            static const zhid_map_t map_dd[] = {
+                { ZKEY_A,     0,  0x0106C40Au },
+                { ZKEY_B,     1,  0x0106C40Bu },
+                { ZKEY_C,     2,  0x0106C40Cu },
+                { ZKEY_MENU,  8,  0x0106C403u }, /* START → HOME */
+                { ZKEY_BACK,  8,  0x0106C403u },
+            };
+            const zhid_map_t *map = dd ? map_dd : map_std;
+            const unsigned map_n = dd ? (unsigned)(sizeof(map_dd) / sizeof(map_dd[0]))
+                                      : (unsigned)(sizeof(map_std) / sizeof(map_std[0]));
             unsigned n;
             bool any = false;
-            for (n = 0; n < sizeof(map) / sizeof(map[0]); n++) {
+            for (n = 0; n < map_n; n++) {
                 if (!(changed & map[n].bit)) continue;
                 bit = map[n].bit;
                 id = map[n].id;
@@ -2415,6 +2428,20 @@ void zbrew_handle_stub(uint32_t id) {
     }
     /* Stub COM generico retorna sucesso para operacoes basicas */
     switch (slot) {
+    case 33: /* IGraphics_Translate(po, x, y) — zeemu BrewGraphics slot 33 */
+    case 34: /* IGraphics_Pan */
+    case 35: /* IGraphics_StretchBlt */
+        if (clsid == AEECLSID_GRAPHICS_REAL || clsid == AEECLSID_GRAPHICS_BREW) {
+            static uint32_t gfx_xf_logs;
+            if (gfx_xf_logs++ < 8)
+                LOGI("IGraphics_%s: r1=%d r2=%d r3=0x%08X",
+                     slot == 33 ? "Translate" : (slot == 34 ? "Pan" : "StretchBlt"),
+                     (int)g_cpu.r[1], (int)g_cpu.r[2], g_cpu.r[3]);
+            g_cpu.r[0] = 0;
+            break;
+        }
+        g_cpu.r[0] = 0;
+        break;
     case 38: /* IGraphics_SetDestination */
         if (clsid == AEECLSID_GRAPHICS_REAL || clsid == AEECLSID_GRAPHICS_BREW) {
             g_display_dest_obj = g_cpu.r[1];

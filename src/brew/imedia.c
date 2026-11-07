@@ -181,8 +181,15 @@ static void media_set_data(zmedia_t *m, uint32_t pdata) {
             else if (m->addr >= ZMEM_GUARD_BASE &&
                      m->addr < ZMEM_GUARD_BASE + ZMEM_GUARD_SIZE)
                 avail = (ZMEM_GUARD_BASE + ZMEM_GUARD_SIZE) - m->addr;
-            if (size == 0 || size >= ZMEM_HEAP_BASE ||
-                (avail && size > avail)) {
+            if (size == 0) {
+                /* Guest clear (DD PCM apos MIDI): idle, sem WARN. */
+                static uint32_t clear_logs;
+                if (clear_logs++ < 4)
+                    LOGI("IMedia_SetMediaData: clear (dwSize=0) prev=0x%08X",
+                         m->addr);
+                m->bytes = 0;
+                m->addr = 0;
+            } else if (size >= ZMEM_HEAP_BASE || (avail && size > avail)) {
                 LOGW("IMedia_SetMediaData: dwSize=%u invalido addr=0x%08X "
                      "(descarta)", size, m->addr);
                 m->bytes = 0;

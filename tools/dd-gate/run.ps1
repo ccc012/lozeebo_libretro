@@ -1,9 +1,10 @@
 # Double Dragon regression gate — FAIL loud (exit 1).
-# Usage: powershell -File tools/dd-gate/run.ps1 [-Frames 600]
+# Usage: powershell -File tools/dd-gate/run.ps1 [-Frames 600] [-Seq "..."]
 param(
     [int]$Frames = 600,
     [string]$Mod = "D:\Temp\zeebo_all\Double_Dragon__Brazil___Es_Pt_\mod\274754\ddragonz.mod",
     [string]$BuildDir = "build-dd-gate",
+    [string]$Seq = "",
     [switch]$SkipBuild
 )
 $ErrorActionPreference = "Stop"
@@ -42,16 +43,22 @@ if (-not (Test-Path $dll)) { Fail "dll ausente: $dll" }
 
 $out = Join-Path $root "artifacts\dd-gate"
 New-Item -ItemType Directory -Force $out | Out-Null
-$ppm = Join-Path $out ("dd-{0}.ppm" -f $Frames)
-$log = Join-Path $out ("dd-{0}.log" -f $Frames)
+$tag = if ($Seq) { "seq-{0}" -f $Frames } else { "{0}" -f $Frames }
+$ppm = Join-Path $out ("dd-{0}.ppm" -f $tag)
+$log = Join-Path $out ("dd-{0}.log" -f $tag)
 Remove-Item $ppm, $log -ErrorAction SilentlyContinue
 
 $env:ZEEMU_SMOKE_MAX_SECONDS = [string]([Math]::Max(120, [int]($Frames / 2)))
-Remove-Item Env:ZEEMU_SMOKE_SEQ -ErrorAction SilentlyContinue
 Remove-Item Env:ZEEMU_SMOKE_DUMP_DIR -ErrorAction SilentlyContinue
-Remove-Item Env:ZEEMU_SMOKE_HOLD_FRAMES -ErrorAction SilentlyContinue
+if ($Seq) {
+    $env:ZEEMU_SMOKE_SEQ = $Seq
+    $env:ZEEMU_SMOKE_HOLD_FRAMES = "0"
+} else {
+    Remove-Item Env:ZEEMU_SMOKE_SEQ -ErrorAction SilentlyContinue
+    Remove-Item Env:ZEEMU_SMOKE_HOLD_FRAMES -ErrorAction SilentlyContinue
+}
 
-Write-Host "smoke ${Frames}f mod=$Mod"
+Write-Host "smoke ${Frames}f mod=$Mod seq=$Seq"
 $cmdLine = "`"$smoke`" `"$dll`" `"$Mod`" `"$ppm`" $Frames 2>`"$log`""
 cmd /c $cmdLine
 $code = $LASTEXITCODE
@@ -78,8 +85,26 @@ if ($data -lt 1) { Fail "data.ggz nao aberto (load nao avancou)" }
 $hard = ([regex]::Matches($text, "(?i)descarril|STACK overflow|FATAL|INVALID opcode")).Count
 if ($hard -gt 0) { Fail "falhas hard=$hard no log" }
 
-$hash = (Get-FileHash $ppm -Algorithm SHA256).Hash
-Write-Host "PASS frames=$Frames exit=0 varied=1 audio_nz ok data.ggz=$data GRAPHICS=$gfx"
+$draw = ([regex]::Matches($text, "DrawArrays\[")).Count
+if ($draw -lt 1) { Fail "DrawArrays ausente (sem cena GL pos-load)" }
+$texOk = ([regex]::Matches($text, "CompressedTex:.*-> OK")).Count
+if ($texOk -lt 1) { Fail "CompressedTex OK ausente" }
+
+if ($Seq) {
+    if ($text -notmatch "hid-button") {
+        Fail "SEQ setada mas hid-button ausente no log"
+    }
+    # Pos-START: PPM nao pode ser o title idle conhecido
+    $idleTitle = "2149E446D5DC3A50D2348E052C516C5CE0F133CEA26C7072A92117672E7E518A"
+    $hash = (Get-FileHash $ppm -Algorithm SHA256).Hash
+    if ($hash -eq $idleTitle) {
+        Fail "PPM ainda e title idle apos SEQ (START nao avancou)"
+    }
+} else {
+    $hash = (Get-FileHash $ppm -Algorithm SHA256).Hash
+}
+
+Write-Host "PASS frames=$Frames exit=0 varied=1 audio_nz ok data.ggz=$data GRAPHICS=$gfx DrawArrays=$draw"
 Write-Host "SUMMARY $sum"
 Write-Host "PPM_SHA256 $hash"
 Write-Host "LOG $log"
