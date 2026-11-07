@@ -16,6 +16,9 @@
 
 #include "../debug/log.h"
 #include "../debug/perf.h"
+
+/* trace.c — profile PC option bridge (sem header dedicado). */
+void ztrace_set_profile_pc(int enabled);
 #include "../memory/memory.h"
 #include "../cpu/cpu.h"
 #include "../gpu/framebuffer.h"
@@ -65,6 +68,8 @@ static char g_archive_file[256];
 static struct retro_core_option_v2_category g_option_categories[] = {
     { "video", "Video", "Video and framebuffer presentation options." },
     { "system", "System", "System integration and compatibility options." },
+    { "debug", "Debug", "Diagnostic mirrors of ZEEMU_* env vars (defaults off)." },
+    { "performance", "Performance", "Optional pacing aids. Frameskip deferred — see handoff." },
     { NULL, NULL, NULL }
 };
 
@@ -98,6 +103,77 @@ static struct retro_core_option_v2_definition g_option_defs[] = {
         "Player"
     },
     {
+        "zeebo_profile_core",
+        "Profile Core",
+        "Profile Core",
+        "Enable QPC counters (mirrors ZEEMU_PROFILE_CORE). Env wins if set.",
+        "Enable QPC counters (mirrors ZEEMU_PROFILE_CORE). Env wins if set.",
+        "debug",
+        {
+            { "disabled", "Disabled" },
+            { "enabled",  "Enabled" },
+            { NULL, NULL }
+        },
+        "disabled"
+    },
+    {
+        "zeebo_profile_pc",
+        "Profile PC",
+        "Profile PC",
+        "PC ring/histogram (mirrors ZEEMU_PROFILE_PC). Env wins if set.",
+        "PC ring/histogram (mirrors ZEEMU_PROFILE_PC). Env wins if set.",
+        "debug",
+        {
+            { "disabled", "Disabled" },
+            { "enabled",  "Enabled" },
+            { NULL, NULL }
+        },
+        "disabled"
+    },
+    {
+        "zeebo_trace_timer",
+        "Trace Timer",
+        "Trace Timer",
+        "Log BREW timer set/fire (mirrors ZEEMU_TRACE_TIMER). Env wins if set.",
+        "Log BREW timer set/fire (mirrors ZEEMU_TRACE_TIMER). Env wins if set.",
+        "debug",
+        {
+            { "disabled", "Disabled" },
+            { "enabled",  "Enabled" },
+            { NULL, NULL }
+        },
+        "disabled"
+    },
+    {
+        "zeebo_log_level",
+        "Log Level",
+        "Log Level",
+        "Minimum log level (mirrors ZEEMU_LOG_LEVEL numeric). Env wins if set.",
+        "Minimum log level (mirrors ZEEMU_LOG_LEVEL numeric). Env wins if set.",
+        "debug",
+        {
+            { "error", "Error" },
+            { "warn",  "Warn" },
+            { "info",  "Info" },
+            { "debug", "Debug" },
+            { NULL, NULL }
+        },
+        "info"
+    },
+    {
+        "zeebo_frameskip",
+        "Frameskip",
+        "Frameskip",
+        "Stub: only disabled is safe this round. Real skip deferred (preserve FP).",
+        "Stub: only disabled is safe this round. Real skip deferred (preserve FP).",
+        "performance",
+        {
+            { "disabled", "Disabled" },
+            { NULL, NULL }
+        },
+        "disabled"
+    },
+    {
         NULL, NULL, NULL, NULL, NULL, NULL,
         { { NULL, NULL } }, NULL
     }
@@ -111,6 +187,11 @@ static struct retro_core_options_v2 g_core_options = {
 static struct retro_variable g_legacy_variables[] = {
     { "zeebo_crop_overscan", "Crop Overscan; disabled|enabled" },
     { "zeebo_username", "Username; Player|Lucas" },
+    { "zeebo_profile_core", "Profile Core; disabled|enabled" },
+    { "zeebo_profile_pc", "Profile PC; disabled|enabled" },
+    { "zeebo_trace_timer", "Trace Timer; disabled|enabled" },
+    { "zeebo_log_level", "Log Level; error|warn|info|debug" },
+    { "zeebo_frameskip", "Frameskip; disabled" },
     { NULL, NULL }
 };
 
@@ -741,6 +822,32 @@ static void sync_runtime_options(void) {
     var.key = "zeebo_username";
     if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
         g_username = var.value;
+
+    /* Debug options: env ZEEMU_* ganha nos setters. Sem GET_VARIABLE (smoke)
+     * defaults off = idêntico a 9e21101. */
+    var.key = "zeebo_profile_core";
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+        zperf_set_option(strcmp(var.value, "enabled") == 0);
+
+    var.key = "zeebo_profile_pc";
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+        ztrace_set_profile_pc(strcmp(var.value, "enabled") == 0);
+
+    var.key = "zeebo_trace_timer";
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+        zlog_set_trace_timer(strcmp(var.value, "enabled") == 0);
+
+    var.key = "zeebo_log_level";
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        enum zlog_level lvl = ZLOG_INFO;
+        if (strcmp(var.value, "error") == 0) lvl = ZLOG_ERROR;
+        else if (strcmp(var.value, "warn") == 0) lvl = ZLOG_WARN;
+        else if (strcmp(var.value, "info") == 0) lvl = ZLOG_INFO;
+        else if (strcmp(var.value, "debug") == 0) lvl = ZLOG_DEBUG;
+        zlog_set_min_level(lvl);
+    }
+
+    /* zeebo_frameskip: stub disabled-only; sem efeito runtime. */
 }
 
 static void register_memory_maps(void) {

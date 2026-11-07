@@ -18,6 +18,11 @@ enum zlog_level {
 typedef void (*zlog_backend_t)(enum zlog_level level, const char *fmt, va_list ap);
 
 void zlog_set_backend(zlog_backend_t backend);
+/* Override minimo; env ZEEMU_LOG_LEVEL ganha se setada (re-lida aqui). */
+void zlog_set_min_level(enum zlog_level level);
+/* Core option mirror; ZEEMU_TRACE_TIMER env ganha se setada. */
+void zlog_set_trace_timer(int enabled);
+int zlog_trace_timer(void);
 void zlog(enum zlog_level level, const char *fmt, ...);
 
 #define LOGD(...) zlog(ZLOG_DEBUG, __VA_ARGS__)

@@ -194,14 +194,14 @@ void zboot_timer_set(int i, uint32_t ms, uint32_t pfn, uint32_t puser) {
     }
     if (i == ZTIMER_MAX) i = free_slot; /* not found, use free slot */
     if (i < 0) i = free_slot;           /* i was -1, use free slot */
-    if (getenv("ZEEMU_TRACE_TIMER"))
+    if (zlog_trace_timer())
         LOGI("zboot_timer_set: i=%d free_slot=%d ms=%u pfn=0x%08X puser=0x%08X", i, free_slot, ms, pfn, puser);
     if (i >= 0 && i < ZTIMER_MAX) {
         g_timers[i].active = true;
         g_timers[i].expires_ms = zbrew_uptime_ms() + (ms < 16 ? 16 : ms);
         g_timers[i].pfn = pfn;
         g_timers[i].puser = puser;
-        if (getenv("ZEEMU_TRACE_TIMER"))
+        if (zlog_trace_timer())
             LOGI("zboot_timer_set: timer[%d] SET active=1 expires=%u", i, g_timers[i].expires_ms);
     } else {
         LOGW("zboot_timer_set: FALHOU - sem slot livre");
@@ -1451,7 +1451,7 @@ void zboot_on_guest_return(void) {
 void zboot_process_timers(void) {
     int i;
     uint32_t now = zbrew_uptime_ms();
-    if (getenv("ZEEMU_TRACE_TIMER")) { /* probe 1x/60 — so sob pedido */
+    if (zlog_trace_timer()) { /* probe 1x/60 — so sob pedido */
         static unsigned tprobe = 0;
         if ((tprobe++ % 60) == 0) {
             int act = 0;
@@ -1464,7 +1464,7 @@ void zboot_process_timers(void) {
                  (unsigned long long)g_cpu.executed);
         }
     }
-    if (getenv("ZEEMU_TRACE_TIMER")) {
+    if (zlog_trace_timer()) {
         static int trace_n = 0;
         int active = 0;
         for (i = 0; i < ZTIMER_MAX; i++)
@@ -1554,13 +1554,13 @@ void zboot_process_timers(void) {
 
     for (i = 0; i < ZTIMER_MAX; i++) {
         if (!g_timers[i].active) {
-            if (getenv("ZEEMU_TRACE_TIMER") && (i == 0))
+            if (zlog_trace_timer() && (i == 0))
                 LOGI("zboot_process_timers: timer[0] inactive now=%u", now);
             continue;
         }
 
         if (now >= g_timers[i].expires_ms) {
-            if (getenv("ZEEMU_TRACE_TIMER"))
+            if (zlog_trace_timer())
                 LOGI("boot: timer %d expirou, callback=0x%08X user=0x%08X now=%u expires=%u",
                      i, g_timers[i].pfn, g_timers[i].puser, now, g_timers[i].expires_ms);
             g_state = BOOT_TIMER_CALL;
