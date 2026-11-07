@@ -50,10 +50,37 @@ static uint32_t g_applet_clsid = 0;
 static uint32_t g_boot_clsid = 0;  /* CLSID original do zboot_start, imune a unserialize */
 static uint32_t g_hid_button_signal = 0;
 static uint32_t g_hid_position_signal = 0;
-static uint32_t g_hid_event_id = 0;
-static uint32_t g_hid_event_uid = 0;
-static bool g_hid_event_down = false;
-static bool g_hid_event_pending = false;
+/* Fila de button-events (zeemu: device.button_events). Slot unico
+ * perdia press+release / multi-botao no mesmo tick — Ovos rachava e
+ * voltava ao ovo intacto. */
+#define ZHID_EVT_QUEUE_MAX 16
+static struct {
+    uint32_t id;
+    uint32_t uid;
+    bool down;
+} g_hid_evt_q[ZHID_EVT_QUEUE_MAX];
+static int g_hid_evt_head = 0;
+static int g_hid_evt_tail = 0;
+static int g_hid_evt_count = 0;
+
+static void hid_evt_push(uint32_t id, uint32_t uid, bool down) {
+    if (g_hid_evt_count >= ZHID_EVT_QUEUE_MAX) return;
+    g_hid_evt_q[g_hid_evt_tail].id = id;
+    g_hid_evt_q[g_hid_evt_tail].uid = uid;
+    g_hid_evt_q[g_hid_evt_tail].down = down;
+    g_hid_evt_tail = (g_hid_evt_tail + 1) % ZHID_EVT_QUEUE_MAX;
+    g_hid_evt_count++;
+}
+
+static bool hid_evt_pop(uint32_t *id, uint32_t *uid, bool *down) {
+    if (g_hid_evt_count <= 0) return false;
+    *id = g_hid_evt_q[g_hid_evt_head].id;
+    *uid = g_hid_evt_q[g_hid_evt_head].uid;
+    *down = g_hid_evt_q[g_hid_evt_head].down;
+    g_hid_evt_head = (g_hid_evt_head + 1) % ZHID_EVT_QUEUE_MAX;
+    g_hid_evt_count--;
+    return true;
+}
 /* Posicao atual do stick analogico esquerdo (0..0xffff, centro 0x8000).
  * Os jogos leem via IHIDDevice_GetPositionState e sao avisados de mudanca
  * via o signal de RegisterForPositionChange. Espelhamos o D-pad (ver
@@ -294,10 +321,19 @@ size_t zboot_serialize(void *dst, size_t max) {
     blob.applet_clsid = g_applet_clsid;
     blob.hid_button_signal = g_hid_button_signal;
     blob.hid_position_signal = g_hid_position_signal;
-    blob.hid_event_id = g_hid_event_id;
-    blob.hid_event_uid = g_hid_event_uid;
-    blob.hid_event_down = g_hid_event_down ? 1u : 0u;
-    blob.hid_event_pending = g_hid_event_pending ? 1u : 0u;
+    /* Savestate: so head da fila (compat blob). Fila completa e
+     * runtime-only — ok, input nao precisa sobreviver savestate. */
+    if (g_hid_evt_count > 0) {
+        blob.hid_event_id = g_hid_evt_q[g_hid_evt_head].id;
+        blob.hid_event_uid = g_hid_evt_q[g_hid_evt_head].uid;
+        blob.hid_event_down = g_hid_evt_q[g_hid_evt_head].down ? 1u : 0u;
+        blob.hid_event_pending = 1u;
+    } else {
+        blob.hid_event_id = 0;
+        blob.hid_event_uid = 0;
+        blob.hid_event_down = 0;
+        blob.hid_event_pending = 0;
+    }
     blob.shell_obj = g_shell_obj;
     memcpy(blob.shell_prefs, g_shell_prefs, sizeof(g_shell_prefs));
     memcpy(blob.shell_events, g_shell_events, sizeof(g_shell_events));
@@ -330,10 +366,10 @@ bool zboot_unserialize(const void *src, size_t len) {
         g_applet_clsid = blob->applet_clsid;
     g_hid_button_signal = blob->hid_button_signal;
     g_hid_position_signal = blob->hid_position_signal;
-    g_hid_event_id = blob->hid_event_id;
-    g_hid_event_uid = blob->hid_event_uid;
-    g_hid_event_down = blob->hid_event_down ? true : false;
-    g_hid_event_pending = blob->hid_event_pending ? true : false;
+    g_hid_evt_head = g_hid_evt_tail = g_hid_evt_count = 0;
+    if (blob->hid_event_pending)
+        hid_evt_push(blob->hid_event_id, blob->hid_event_uid,
+                     blob->hid_event_down != 0);
     g_shell_obj = blob->shell_obj;
     memcpy(g_shell_prefs, blob->shell_prefs, sizeof(g_shell_prefs));
     memcpy(g_shell_events, blob->shell_events, sizeof(g_shell_events));
@@ -1093,7 +1129,7 @@ void zboot_start(uint32_t entry, uint32_t applet_clsid) {
     g_display_clip_h = 480;
     g_hid_button_signal = 0;
     g_hid_position_signal = 0;
-    g_hid_event_pending = false;
+    g_hid_evt_head = g_hid_evt_tail = g_hid_evt_count = 0;
     g_hid_connect_signal = 0;
     g_hid_connect_pending = false;
     g_hid_connect_event_avail = true;
@@ -1641,35 +1677,29 @@ void zboot_tick(uint32_t elapsed_ms) {
                 { ZKEY_BACK,  8,  0x0106C403u },
             };
             unsigned n;
+            bool any = false;
             for (n = 0; n < sizeof(map) / sizeof(map[0]); n++) {
-                if (changed & map[n].bit) {
-                    bit = map[n].bit;
-                    id = map[n].id;
-                    uid = map[n].uid;
-                    break;
+                if (!(changed & map[n].bit)) continue;
+                bit = map[n].bit;
+                id = map[n].id;
+                uid = map[n].uid;
+                hid_evt_push(id, uid, down);
+                any = true;
+                if (getenv("ZEEMU_TRACE_HID")) {
+                    LOGI("HID: uid=0x%08X down=%u q=%d",
+                         uid, down ? 1u : 0u, g_hid_evt_count);
                 }
             }
-        }
-        if (bit && g_hid_button_signal) {
-            uint32_t callback = zmem_read32(g_hid_button_signal + 4);
-            uint32_t user = zmem_read32(g_hid_button_signal + 8);
-            g_hid_event_id = id;
-            g_hid_event_uid = uid;
-            g_hid_event_down = down;
-            g_hid_event_pending = true;
-            if (getenv("ZEEMU_TRACE_HID")) {
-                LOGI("HID: uid=0x%08X down=%u callback=0x%08X user=0x%08X",
-                     uid, down ? 1u : 0u, callback, user);
+            if (any && g_hid_button_signal) {
+                uint32_t user = zmem_read32(g_hid_button_signal + 8);
+                /* Convencao BREW: ISignalCtl e so um "acorde-me"
+                 * (PFNNOTIFY(pUser)); jogo drena via GetNextButtonEvent. */
+                zboot_signal_fire(g_hid_button_signal, "hid-button");
+                if (getenv("ZEEMU_CB_R4_AS_USER"))
+                    g_cpu.r[4] = user;
+                if (zboot_signal_drain_one())
+                    return;
             }
-            /* Convencao BREW: ISignalCtl e so um "acorde-me" (PFNNOTIFY(pUser)),
-             * sem parametros de evento - o jogo consulta os detalhes depois via
-             * IHIDDevice_GetNextEvent (case 9, que ja devolve id/down/uid).
-             * Passa pelo ISignal (detached/pendente) e dispara na hora. */
-            zboot_signal_fire(g_hid_button_signal, "hid-button");
-            if (getenv("ZEEMU_CB_R4_AS_USER"))
-                g_cpu.r[4] = user;
-            if (zboot_signal_drain_one())
-                return;
         }
     }
 
@@ -3186,20 +3216,21 @@ void zbrew_handle_stub(uint32_t id) {
         }
         if (clsid == ZCLSID_HID_DEVICE) {
             uint32_t info = g_cpu.r[1];
-            if (!g_hid_event_pending) {
+            uint32_t eid = 0, euid = 0;
+            bool edown = false;
+            if (!hid_evt_pop(&eid, &euid, &edown)) {
                 g_cpu.r[0] = 5;
                 break;
             }
             if (info) {
-                zmem_write32(info + 0, g_hid_event_id);
-                zmem_write32(info + 4, g_hid_event_down ? 1 : 0);
-                zmem_write32(info + 8, g_hid_event_uid);
+                zmem_write32(info + 0, eid);
+                zmem_write32(info + 4, edown ? 1 : 0);
+                zmem_write32(info + 8, euid);
                 zmem_write32(info + 12, 0);
                 zmem_write32(info + 16, 1);
             }
             if (g_cpu.r[2]) zmem_write32(g_cpu.r[2], 0);
             if (g_cpu.r[3]) zmem_write8(g_cpu.r[3], 0);
-            g_hid_event_pending = false;
             g_cpu.r[0] = 0;
             break;
         }

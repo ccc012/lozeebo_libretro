@@ -51,9 +51,13 @@ typedef struct {
     uint32_t mp3_offs;   /* offset de leitura no stream */
     uint16_t block_align;     /* bytes por bloco (ADPCM, do WAV fmt) */
     uint16_t samples_per_block; /* samples por bloco (ADPCM) */
+    uint8_t  pending_start_notify; /* START adiado pos-1o render */
+    uint8_t  awaiting_done;        /* DONE quando voz PCM acaba */
 } zmedia_t;
 
 zmedia_t *media_from_obj(uint32_t obj);
+/* Pos zaudio_render: dispara START adiado / DONE de PCM curto. */
+void zbrew_media_tick(void);
 
 /* Factories chamadas pelo IMediaUtil / IShell_CreateInstance */
 uint32_t zbrew_create_media_pcm(void);

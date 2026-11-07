@@ -166,11 +166,11 @@ typedef struct {
 
 static const smoke_seq_item_t *smoke_seq_items(int *count)
 {
-    static smoke_seq_item_t items[32];
+    static smoke_seq_item_t items[128];
     static int parsed = 0;
     static int parsed_n = 0;
     const char *v = getenv("ZEEMU_SMOKE_SEQ");
-    char buf[256];
+    char buf[2048];
     char *tok, *save;
     int n = 0;
     if (parsed) {
@@ -186,7 +186,7 @@ static const smoke_seq_item_t *smoke_seq_items(int *count)
     strncpy(buf, v, sizeof(buf) - 1);
     buf[sizeof(buf) - 1] = 0;
     tok = strtok_s(buf, ",", &save);
-    while (tok && n < 32) {
+    while (tok && n < 128) {
         char btn[32];
         unsigned frame = 0, hold = 0;
         int field = sscanf(tok, "%31[^:]%*[:]%u%*[:]%u", btn, &frame, &hold);

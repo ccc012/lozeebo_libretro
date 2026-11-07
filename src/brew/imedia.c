@@ -452,8 +452,9 @@ void zbrew_handle_media(uint32_t id) {
         }
         if (m->notify_cb) {
             /* START se voz/stream ativa. PCM curto Ovos: notify sync
-             * no Play faz guest Stop antes do zaudio_render do frame
-             * → audio=0 mesmo com mixer ok. Adia START PCM. */
+             * no Play faz guest Stop antes do zaudio_render → audio=0.
+             * Adia START; DONE via zbrew_media_tick quando voz acaba
+             * (permite re-Play / loops de SFX). */
             uint32_t status = MM_STATUS_DONE;
             if (m->state == ZMEDIA_STATE_PLAY ||
                 m->voice >= 0 || m->mp3_stream >= 0 ||
@@ -463,7 +464,8 @@ void zbrew_handle_media(uint32_t id) {
             if (status == MM_STATUS_START && m->voice >= 0 &&
                 !m->is_mp3 && m->clsid != AEECLSID_MEDIAMP3 &&
                 m->clsid != AEECLSID_MEDIAMIDI) {
-                /* PCM: sem notify sync; voz toca ate o fim no mixer. */
+                m->pending_start_notify = 1;
+                m->awaiting_done = 1;
             } else {
                 media_notify(m, MM_CMD_PLAY, 0, status);
                 if (status == MM_STATUS_DONE)
@@ -567,4 +569,23 @@ uint32_t zbrew_create_media_adpcm(void) {
     if (!m) return 0;
     m->adpcm_state = calloc(1, sizeof(struct zimad_state));
     return m->obj;
+}
+
+void zbrew_media_tick(void) {
+    int i;
+    for (i = 0; i < ZMEDIA_MAX; i++) {
+        zmedia_t *m = &g_media[i];
+        if (!m->active) continue;
+        if (m->pending_start_notify) {
+            m->pending_start_notify = 0;
+            media_notify(m, MM_CMD_PLAY, 0, MM_STATUS_START);
+        }
+        if (m->awaiting_done && m->voice >= 0 &&
+            !zaudio_voice_active(m->voice)) {
+            m->awaiting_done = 0;
+            m->voice = -1;
+            m->state = m->bytes ? ZMEDIA_STATE_READY : ZMEDIA_STATE_IDLE;
+            media_notify(m, MM_CMD_PLAY, 0, MM_STATUS_DONE);
+        }
+    }
 }

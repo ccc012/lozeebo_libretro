@@ -314,6 +314,7 @@ void     zbrew_ifile_reset(void);
 uint32_t zbrew_make_idisplay_real(int relative);
 void zbrew_handle_sound(uint32_t id);
 void zbrew_handle_media(uint32_t id);
+void zbrew_media_tick(void);
 void zbrew_handle_source(uint32_t id);
 void zbrew_handle_media_util(uint32_t id);
 

@@ -1,7 +1,9 @@
-# Ovos gate - criterios @ mixer pos_fp fix + heap auto-Play (2026-11-07).
+# Ovos gate - criterios @ mixer pos_fp + heap auto-Play + media_tick + HID queue
+# (2026-11-07).
 # Pass: exit 0, video_varied=1, video_ever_varied=1, audio_nonzero>0,
 #       0 invalid/STACK/descarril. Sem fake HandleEvent(evt=2) CLSID 0x010963A5.
-# -Playable: SEQ longa + PPM com amarelo ovo (ffcc33) / black<0.5.
+# -Playable: SEQ shake pos-ovo → rachadura → starfield; audio continuo (MP3);
+#            dump com fase amarela E fase starfield; hid-button.
 param(
     [int]$Frames = 180,
     [string]$Mod = "D:\Temp\zeebo_all\Um_Jogo_de_Ovos__Brazil___Es_Pt_\mod\279036\game.mod",
@@ -53,10 +55,26 @@ Remove-Item Env:ZEEMU_SMOKE_DUMP_DIR -ErrorAction SilentlyContinue
 $env:ZEEMU_SMOKE_HOLD_FRAMES = "0"
 $env:ZEEMU_SMOKE_MAX_SECONDS = [string]([Math]::Max(120, [int]($Frames / 2) + 60))
 
+$dumpDir = $null
 if ($Playable) {
-    $Frames = 900
-    $env:ZEEMU_SMOKE_MAX_SECONDS = "300"
-    $env:ZEEMU_SMOKE_SEQ = "A:60:15,A:120:15,START:180:15,A:240:15,START:300:15,A:360:20,UP:420:10,DOWN:450:10,A:480:20,START:540:20,A:600:20,RIGHT:660:15,LEFT:700:15,A:750:20,START:810:20"
+    $Frames = 1600
+    $env:ZEEMU_SMOKE_MAX_SECONDS = "400"
+    # Shake D-pad+B apos ovo (~f1000) → rachadura → starfield + MP3
+    $seq = @()
+    for ($f = 1000; $f -lt 1320; $f += 8) {
+        $dirs = @('UP','RIGHT','DOWN','LEFT','B')
+        $seq += ("{0}:{1}:7" -f $dirs[(($f / 8) % 5)], $f)
+    }
+    for ($f = 1350; $f -lt 1550; $f += 10) {
+        $dirs = @('UP','DOWN','LEFT','RIGHT','B','A')
+        $seq += ("{0}:{1}:8" -f $dirs[(($f / 10) % 6)], $f)
+    }
+    $env:ZEEMU_SMOKE_SEQ = ($seq -join ",")
+    $dumpDir = Join-Path $out "playable-dump"
+    New-Item -ItemType Directory -Force $dumpDir | Out-Null
+    Remove-Item (Join-Path $dumpDir "*.ppm") -ErrorAction SilentlyContinue
+    $env:ZEEMU_SMOKE_DUMP_DIR = $dumpDir
+    $env:ZEEMU_SMOKE_DUMP_STRIDE = "20"
     $ppm = Join-Path $out "playable.ppm"
     $log = Join-Path $out "playable.log"
     Remove-Item $ppm, $log -ErrorAction SilentlyContinue
@@ -96,29 +114,45 @@ if ($badDesc -gt 0) { $fail += "descarril=$badDesc" }
 if ($fakeEvt2 -gt 0) { $fail += "fake HandleEvent(evt=2)=$fakeEvt2" }
 
 if ($Playable) {
-    # PPM: ovo amarelo ffcc33 / black fraction < 0.5
+    # Dump: fase ovo amarelo E fase starfield pos-quebra (black~0.996, white~650)
+    $dumpEsc = $dumpDir.Replace('\','\\')
     $py = @"
 from collections import Counter
-raw=open(r'$($ppm.Replace('\','\\'))','rb').read()
-i=raw.index(b'\n',2)+1; i2=raw.index(b'\n',i)+1; i3=raw.index(b'\n',i2)+1
-pix=raw[i3:]; n=len(pix)//3
-c=Counter(pix[j:j+3] for j in range(0,len(pix),3))
-black=c[b'\x00\x00\x00']/n
-yellow=sum(v for k,v in c.items() if k[0]>=0xe0 and k[1]>=0x90 and k[1]<=0xe0 and k[2]<=0x60)
-print(f'black={black:.4f} yellow={yellow} unique={len(c)}')
-raise SystemExit(0 if (black < 0.5 and yellow > 1000) else 1)
+import glob, os
+egg=False; star=False; crack=False
+for p in sorted(glob.glob(r'$dumpEsc\\frame_*.ppm')):
+    raw=open(p,'rb').read()
+    i=raw.index(b'\n',2)+1; i2=raw.index(b'\n',i)+1; i3=raw.index(b'\n',i2)+1
+    pix=raw[i3:]; n=len(pix)//3
+    c=Counter(pix[j:j+3] for j in range(0,len(pix),3))
+    black=c[b'\x00\x00\x00']/n
+    yellow=sum(v for k,v in c.items() if k[0]>=0xe0 and 0x90<=k[1]<=0xe0 and k[2]<=0x60)
+    white=c[b'\xff\xff\xff']
+    if black < 0.5 and yellow > 10000: egg=True
+    if 0.2 < black < 0.5 and yellow > 50000: crack=True
+    if black > 0.99 and 400 < white < 2000 and len(c) < 40: star=True
+nd=len(glob.glob(r'$dumpEsc\\frame_*.ppm'))
+print(f'egg={int(egg)} crack={int(crack)} star={int(star)} dumps={nd}')
+raise SystemExit(0 if (egg and star) else 1)
 "@
     $pyFile = Join-Path $out "ppm_check.py"
     Set-Content -Path $pyFile -Value $py -Encoding UTF8
     python $pyFile
-    if ($LASTEXITCODE -ne 0) { $fail += "PPM not egg/menu (black>=0.5 or yellow<=1000)" }
+    if ($LASTEXITCODE -ne 0) { $fail += "missing egg→starfield phases in dump" }
     if ($raw -notmatch "hid-button") { $fail += "no hid-button" }
+    if ($raw -notmatch "IMedia_Play: MP3") { $fail += "no MP3 Play (post-crack audio)" }
+    if ($audio -lt 100000) { $fail += "audio_nonzero=$audio (need >=100000 continuous)" }
 }
 
 if ($fail.Count -gt 0) {
     Fail ($fail -join ", ")
 }
 
-$hash = (Get-FileHash $ppm -Algorithm SHA256).Hash
+if (-not (Test-Path $ppm) -and $dumpDir) {
+    $last = Get-ChildItem (Join-Path $dumpDir "frame_*.ppm") -ErrorAction SilentlyContinue |
+        Sort-Object Name | Select-Object -Last 1
+    if ($last) { Copy-Item $last.FullName $ppm -Force }
+}
+$hash = if (Test-Path $ppm) { (Get-FileHash $ppm -Algorithm SHA256).Hash } else { "none" }
 Write-Host "PASS exit=0 varied=1 ever=1 audio_nonzero=$audio invalids=0 ppm=$hash"
 exit 0

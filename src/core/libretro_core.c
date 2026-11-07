@@ -662,6 +662,8 @@ void retro_run(void) {
     zaudio_render(g_audio_buf, ZEEBO_AUDIO_FRAMES);
     zmidi_render(g_audio_buf, ZEEBO_AUDIO_FRAMES);
     zmp3_render_all(g_audio_buf, ZEEBO_AUDIO_FRAMES);
+    /* IMedia START adiado / DONE apos voz PCM acabar (Ovos SFX loop). */
+    zbrew_media_tick();
     if (audio_batch_cb)
         audio_batch_cb(g_audio_buf, ZEEBO_AUDIO_FRAMES);
     crash_mark = 99;

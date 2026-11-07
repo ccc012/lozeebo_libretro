@@ -8,7 +8,7 @@
   "video_varied": 1,
   "audio_nonzero_min": 500000,
   "audio_nonzero_baseline": 927840,
-  "ppm_sha256": "4266AFD3FC24D1E37ACF022684897CA3D8B6410A437513E952DD058BAC46483D",
+  "ppm_sha256": "DC43FEA183E9930E6C6C24F1012680CBCC9CBD754CEFDA39BE98A31F258947C0",
   "max_seconds": 240,
   "fail_log_patterns": ["INVALID", "STACK overflow", "descarril"]
 }
