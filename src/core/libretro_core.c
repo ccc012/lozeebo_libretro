@@ -52,6 +52,8 @@ static bool g_memory_map_set = false;
 static bool g_crop_overscan = false;
 static int g_language = RETRO_LANGUAGE_ENGLISH;
 static const char *g_username = "Player";
+static unsigned g_frameskip = 0;
+static unsigned g_frameskip_counter = 0;
 static bool g_disk_ejected = false;
 static unsigned g_disk_index = 0;
 static bool g_disk_has_initial = false;
@@ -164,14 +166,17 @@ static struct retro_core_option_v2_definition g_option_defs[] = {
         "zeebo_frameskip",
         "Frameskip",
         "Frameskip",
-        "Stub: only disabled is safe this round. Real skip deferred (preserve FP).",
-        "Stub: only disabled is safe this round. Real skip deferred (preserve FP).",
+        "Skip N frames between renders. Higher = faster but choppier. Use if <10 FPS.",
+        "Skip N frames between renders. Higher = faster but choppier. Use if <10 FPS.",
         "performance",
         {
-            { "disabled", "Disabled" },
+            { "0", "Disabled" },
+            { "1", "Skip 1" },
+            { "2", "Skip 2" },
+            { "3", "Skip 3" },
             { NULL, NULL }
         },
-        "disabled"
+        "0"
     },
     {
         NULL, NULL, NULL, NULL, NULL, NULL,
@@ -191,7 +196,7 @@ static struct retro_variable g_legacy_variables[] = {
     { "zeebo_profile_pc", "Profile PC; disabled|enabled" },
     { "zeebo_trace_timer", "Trace Timer; disabled|enabled" },
     { "zeebo_log_level", "Log Level; error|warn|info|debug" },
-    { "zeebo_frameskip", "Frameskip; disabled" },
+    { "zeebo_frameskip", "Frameskip; 0|1|2|3" },
     { NULL, NULL }
 };
 
@@ -634,29 +639,42 @@ void retro_run(void) {
     }
     crash_mark = 10;
 
+    /* Frameskip: skip video_cb N times, keep CPU+audio running. */
+    bool do_video = true;
+    if (g_frameskip > 0) {
+        if (g_frameskip_counter < g_frameskip) {
+            g_frameskip_counter++;
+            do_video = false;
+        } else {
+            g_frameskip_counter = 0;
+        }
+    }
+
+    if (do_video) {
         /* Video: framebuffer da VRAM emulada (sempre valido apos zfb_init) */
         /* Se o jogo nao marcou frame (EGL sem swap, IDisplay sem desenho,
          * etc) mas esta rodando, forca mark_frame para nao ficar tela preta
          * indefinidamente. Jogos que legitimamente ficam preto (loading)
          * vao mostrar preto do framebuffer mesmo assim. */
-    if (!zbrew_frame_ready() && !g_cpu.halted) {
-        /* Autopresent chama zegl_handle(26) e zera R0=1. Durante
-         * CreateInstance isso corrompe o poll do guest (FP: LR=0xE94
-         * → slide ate 0x04000000). So apos BOOT_RUNNING. */
-        if (zegl_has_context() && zboot_state() == ZBOOT_RUNNING) {
-            zegl_autopresent();
-        } else {
-            zbrew_mark_frame();
+        if (!zbrew_frame_ready() && !g_cpu.halted) {
+            /* Autopresent chama zegl_handle(26) e zera R0=1. Durante
+             * CreateInstance isso corrompe o poll do guest (FP: LR=0xE94
+             * → slide ate 0x04000000). So apos BOOT_RUNNING. */
+            if (zegl_has_context() && zboot_state() == ZBOOT_RUNNING) {
+                zegl_autopresent();
+            } else {
+                zbrew_mark_frame();
+            }
         }
+        if (video_cb) {
+            uint32_t *fb = zfb_pixels();
+            if (g_crop_overscan)
+                video_cb(fb + (8 * ZFB_WIDTH), ZFB_WIDTH, ZFB_HEIGHT - 16, ZFB_WIDTH * sizeof(uint32_t));
+            else
+                video_cb(fb, ZFB_WIDTH, ZFB_HEIGHT, ZFB_WIDTH * sizeof(uint32_t));
+        }
+        zbrew_clear_frame_flag();
     }
-    if (video_cb) {
-        uint32_t *fb = zfb_pixels();
-        if (g_crop_overscan)
-            video_cb(fb + (8 * ZFB_WIDTH), ZFB_WIDTH, ZFB_HEIGHT - 16, ZFB_WIDTH * sizeof(uint32_t));
-        else
-            video_cb(fb, ZFB_WIDTH, ZFB_HEIGHT, ZFB_WIDTH * sizeof(uint32_t));
-    }
-    zbrew_clear_frame_flag();
 
     /* Audio: 735 frames estereo por tick de 60 Hz */
     zaudio_render(g_audio_buf, ZEEBO_AUDIO_FRAMES);
@@ -849,7 +867,9 @@ static void sync_runtime_options(void) {
         zlog_set_min_level(lvl);
     }
 
-    /* zeebo_frameskip: stub disabled-only; sem efeito runtime. */
+    var.key = "zeebo_frameskip";
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+        g_frameskip = (unsigned)atoi(var.value);
 }
 
 static void register_memory_maps(void) {
