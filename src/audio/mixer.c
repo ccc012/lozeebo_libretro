@@ -26,6 +26,8 @@ void zaudio_render(int16_t *out, uint32_t frames) {
                 if (voice->loop && voice->samples > 0) {
                     voice->pos_fp = 0;
                     idx = 0;
+                    if (voice->fmt == ZPCM_ADPCM && voice->adpcm)
+                        zimad_reset(voice->adpcm);
                 } else {
                     voice->active = false;
                     break;
@@ -35,14 +37,23 @@ void zaudio_render(int16_t *out, uint32_t frames) {
             if (voice->fmt == ZPCM_ADPCM) {
                 /* ADPCM: decode via state machine de blocos (portado do Zeemu) */
                 struct zimad_state *st = voice->adpcm;
-                int16_t s = 0;
-                bool ok = false;
                 if (!st) { voice->active = false; break; }
-                if (st->eof && voice->loop) zimad_reset(st);
-                if (zimad_next(st, &s)) ok = true;
-                else if (voice->loop) { zimad_reset(st); if (zimad_next(st, &s)) ok = true; }
-                if (!ok) { voice->active = false; break; }
-                sl = sr = s;
+                /* O decoder e sequencial: avance apenas ate o sample fonte
+                 * pedido por pos_fp, retendo-o durante upsampling. */
+                while (st->total_samples_decoded <= idx) {
+                    if (!zimad_next(st, &voice->adpcm_sample)) {
+                        if (!voice->loop) { voice->active = false; break; }
+                        zimad_reset(st);
+                        voice->pos_fp = 0;
+                        idx = 0;
+                        if (!zimad_next(st, &voice->adpcm_sample)) {
+                            voice->active = false;
+                            break;
+                        }
+                    }
+                }
+                if (!voice->active) break;
+                sl = sr = voice->adpcm_sample;
             }
             else if (stereo) {
                 sl = zpcm_decode_sample(voice->addr, idx * 2, voice->fmt);

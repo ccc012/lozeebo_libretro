@@ -15,7 +15,7 @@ struct zimad_state {
     uint32_t sample_rate;     /* sample rate original */
     
     /* Estado do decoder */
-    int16_t predictor;        /* predictor atual */
+    int32_t predictor;        /* acumula antes do clamp s16, sem wrap */
     int8_t step_index;        /* indice da tabela de passos */
     uint32_t block_pos;       /* posicao dentro do bloco atual */
     uint32_t total_samples_decoded; /* samples decodificados total */

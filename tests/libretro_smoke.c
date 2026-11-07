@@ -56,6 +56,7 @@ static uint32_t g_video_first;
 static uint32_t g_video_xor;
 static bool g_video_varied;
 static bool g_video_ever_varied;
+static FILE *g_audio_dump;
 
 static void video(const void *data, unsigned width, unsigned height, size_t pitch)
 {
@@ -127,6 +128,9 @@ static size_t audio_batch(const int16_t *data, size_t frames)
         unsigned sample = data[i] < 0 ? (unsigned)-(int)data[i] : (unsigned)data[i];
         if (sample) g_audio_nonzero++;
         if (sample > g_audio_peak) g_audio_peak = sample;
+    }
+    if (g_audio_dump && data && frames > 0) {
+        fwrite(data, sizeof(int16_t), frames * 2, g_audio_dump);
     }
     return frames;
 }
@@ -383,6 +387,22 @@ int main(int argc, char **argv)
     game.data = rom_data;
     game.size = rom_size;
 
+    {
+        const char *audio_dump_path = getenv("ZEEMU_SMOKE_AUDIO_DUMP");
+        if (audio_dump_path && audio_dump_path[0]) {
+            g_audio_dump = fopen(audio_dump_path, "wb");
+            if (g_audio_dump) {
+                /* WAV header placeholder: 44100Hz stereo s16le */
+                uint8_t wav_hdr[44] = {
+                    'R','I','F','F', 0,0,0,0, 'W','A','V','E',
+                    'f','m','t',' ', 16,0,0,0, 1,0, 2,0,
+                    0x44,0xAC,0,0, 0x10,0xB1,2,0, 4,0, 16,0,
+                    'd','a','t','a', 0,0,0,0
+                };
+                fwrite(wav_hdr, 1, 44, g_audio_dump);
+            }
+        }
+    }
     retro_set_environment(environment);
     retro_set_video_refresh(video);
     retro_set_audio_sample_batch(audio_batch);
@@ -434,6 +454,16 @@ int main(int argc, char **argv)
                     g_video_frames, g_audio_frames, g_audio_nonzero, g_audio_peak);
             fclose(af);
         }
+    }
+    if (g_audio_dump) {
+        uint32_t data_size = (uint32_t)(g_audio_frames * 4);
+        uint32_t file_size = data_size + 36;
+        fseek(g_audio_dump, 4, SEEK_SET);
+        fwrite(&file_size, 4, 1, g_audio_dump);
+        fseek(g_audio_dump, 40, SEEK_SET);
+        fwrite(&data_size, 4, 1, g_audio_dump);
+        fclose(g_audio_dump);
+        g_audio_dump = NULL;
     }
     retro_unload_game();
     retro_deinit();
