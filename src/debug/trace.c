@@ -1,6 +1,7 @@
 /* trace.c - Ring buffer dos ultimos PCs executados (debug de travas) */
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "log.h"
 
@@ -19,7 +20,10 @@ void ztrace_dump(void);
 static void zhist_dump(void);
 
 void ztrace_pc(uint32_t pc) {
+    static int profile = -1;
     g_trace[g_trace_pos++ & (ZTRACE_SIZE - 1)] = pc;
+    if (profile < 0) profile = getenv("ZEEMU_PROFILE_PC") != NULL;
+    if (!profile) return;
     if ((pc & ~0xFFFu) < 0x01000000u)
         g_hist[(pc >> 12) & (ZHIST_BUCKETS - 1)]++;
     if (!g_hist_done) {

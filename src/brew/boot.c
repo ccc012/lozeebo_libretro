@@ -194,13 +194,15 @@ void zboot_timer_set(int i, uint32_t ms, uint32_t pfn, uint32_t puser) {
     }
     if (i == ZTIMER_MAX) i = free_slot; /* not found, use free slot */
     if (i < 0) i = free_slot;           /* i was -1, use free slot */
-    LOGI("zboot_timer_set: i=%d free_slot=%d ms=%u pfn=0x%08X puser=0x%08X", i, free_slot, ms, pfn, puser);
+    if (getenv("ZEEMU_TRACE_TIMER"))
+        LOGI("zboot_timer_set: i=%d free_slot=%d ms=%u pfn=0x%08X puser=0x%08X", i, free_slot, ms, pfn, puser);
     if (i >= 0 && i < ZTIMER_MAX) {
         g_timers[i].active = true;
         g_timers[i].expires_ms = zbrew_uptime_ms() + (ms < 16 ? 16 : ms);
         g_timers[i].pfn = pfn;
         g_timers[i].puser = puser;
-        LOGI("zboot_timer_set: timer[%d] SET active=1 expires=%u", i, g_timers[i].expires_ms);
+        if (getenv("ZEEMU_TRACE_TIMER"))
+            LOGI("zboot_timer_set: timer[%d] SET active=1 expires=%u", i, g_timers[i].expires_ms);
     } else {
         LOGW("zboot_timer_set: FALHOU - sem slot livre");
     }
@@ -1558,8 +1560,9 @@ void zboot_process_timers(void) {
         }
 
         if (now >= g_timers[i].expires_ms) {
-            LOGI("boot: timer %d expirou, callback=0x%08X user=0x%08X now=%u expires=%u",
-                 i, g_timers[i].pfn, g_timers[i].puser, now, g_timers[i].expires_ms);
+            if (getenv("ZEEMU_TRACE_TIMER"))
+                LOGI("boot: timer %d expirou, callback=0x%08X user=0x%08X now=%u expires=%u",
+                     i, g_timers[i].pfn, g_timers[i].puser, now, g_timers[i].expires_ms);
             g_state = BOOT_TIMER_CALL;
             g_timers[i].active = false;
             g_cpu.r[REG_SP] = ZMEM_STACK_TOP;
