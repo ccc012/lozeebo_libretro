@@ -28,7 +28,13 @@ bool zcontent_is_package(const char *p) { return extension(p, ".7z") || extensio
 #define PATH_CAP 1024
 /* ponytail: Windows desktop + installed 7-Zip; use an in-process decoder when
  * supporting other platforms. No PATH lookup or shell execution. */
+#ifdef ZCONTENT_RUN7_TEST
+static wchar_t seven[PATH_CAP];
+#define RUN7_TIMEOUT_MS 500
+#else
 static const wchar_t seven[] = L"C:\\ProgramData\\chocolatey\\bin\\7z.exe";
+#define RUN7_TIMEOUT_MS 120000
+#endif
 typedef struct { char name[512]; uint64_t size; int dir; } Entry;
 
 static int wide(const char *s, wchar_t *w, int n) {
@@ -134,12 +140,27 @@ static int quote(wchar_t *cmd, size_t cap, const wchar_t *arg) {
     }
     cmd[n++]=L'"'; cmd[n]=0; return 1;
 }
+typedef struct { HANDLE stop, job, reader; volatile LONG expired; } Run7Watch;
+static DWORD WINAPI run7_watch(void *arg) {
+    Run7Watch *w=(Run7Watch *)arg;
+    if (WaitForSingleObject(w->stop,RUN7_TIMEOUT_MS)==WAIT_TIMEOUT) {
+        InterlockedExchange(&w->expired,1);
+        TerminateJobObject(w->job,1);
+        /* Repeat cancellation: the reader may enter WriteFile just after a cancel.
+         * Join before releasing the stack/context or any of these handles. */
+        do { CancelSynchronousIo(w->reader); }
+        while (WaitForSingleObject(w->stop,10)==WAIT_TIMEOUT);
+    }
+    return 0;
+}
 /* Bounded pipe, no guest executable, no shell, no filesystem output from 7z.
- * A watchdog terminates hung/encrypted archives after 120 seconds. */
+ * Timeout requests tree termination + synchronous I/O cancellation; Windows
+ * drivers/scheduling can delay completion, so this is not a hard wall-clock bound. */
 static int run7(const wchar_t *source, const char *member, HANDLE dest,
                 char **listing, uint64_t limit) {
     wchar_t cmd[8192]=L"", wm[512];
-    HANDLE rd=NULL,wr=NULL,nul=INVALID_HANDLE_VALUE;
+    HANDLE rd=NULL,wr=NULL,nul=INVALID_HANDLE_VALUE,job=NULL,watch=NULL;
+    Run7Watch guard={0}; JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits={0};
     SECURITY_ATTRIBUTES sa={sizeof(sa),NULL,TRUE};
     STARTUPINFOW si; PROCESS_INFORMATION pi; DWORD code=1,n,wrote;
     unsigned char buf[65536]; uint64_t total=0; ULONGLONG start=GetTickCount64(); int ok=0;
@@ -156,17 +177,27 @@ static int run7(const wchar_t *source, const char *member, HANDLE dest,
     nul=CreateFileW(L"NUL",GENERIC_READ|GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE,&sa,OPEN_EXISTING,0,NULL);
     if (nul==INVALID_HANDLE_VALUE) goto end;
     si.dwFlags=STARTF_USESTDHANDLES; si.hStdOutput=wr; si.hStdError=nul; si.hStdInput=nul;
-    if (!CreateProcessW(seven,cmd,NULL,NULL,TRUE,CREATE_NO_WINDOW,NULL,NULL,&si,&pi)) goto end;
+    job=CreateJobObjectW(NULL,NULL);
+    limits.BasicLimitInformation.LimitFlags=JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if (!job || !SetInformationJobObject(job,JobObjectExtendedLimitInformation,&limits,sizeof(limits))) goto end;
+    if (!CreateProcessW(seven,cmd,NULL,NULL,TRUE,CREATE_NO_WINDOW|CREATE_SUSPENDED,NULL,NULL,&si,&pi)) goto end;
+    /* The Chocolatey shim can spawn the actual decoder: contain before any code runs. */
+    if (!AssignProcessToJobObject(job,pi.hProcess)) goto end;
+    guard.job=job; guard.stop=CreateEventW(NULL,TRUE,FALSE,NULL);
+    if (!guard.stop || !DuplicateHandle(GetCurrentProcess(),GetCurrentThread(),GetCurrentProcess(),
+                                      &guard.reader,0,FALSE,DUPLICATE_SAME_ACCESS)) goto end;
+    watch=CreateThread(NULL,0,run7_watch,&guard,0,NULL);
+    if (!watch || ResumeThread(pi.hThread)==(DWORD)-1) goto end;
     CloseHandle(wr); wr=NULL;
     if (listing) { *listing=(char *)malloc((size_t)limit+1); if (!*listing) goto end; }
     for (;;) {
         DWORD avail=0;
+        if (guard.expired || GetTickCount64()-start>=RUN7_TIMEOUT_MS) goto end;
         if (!PeekNamedPipe(rd,NULL,0,NULL,&avail,NULL)) break;
         if (!avail) {
             if (WaitForSingleObject(pi.hProcess,10)==WAIT_OBJECT_0) {
                 if (!PeekNamedPipe(rd,NULL,0,NULL,&avail,NULL) || !avail) break;
             }
-            if (GetTickCount64()-start>120000) goto end;
             continue;
         }
         if (!ReadFile(rd,buf,avail<sizeof(buf)?avail:sizeof(buf),&n,NULL)) goto end;
@@ -176,11 +207,20 @@ static int run7(const wchar_t *source, const char *member, HANDLE dest,
         total+=n;
     }
     if (WaitForSingleObject(pi.hProcess,1000)!=WAIT_OBJECT_0 || !GetExitCodeProcess(pi.hProcess,&code) || code) goto end;
+    if (guard.expired || GetTickCount64()-start>=RUN7_TIMEOUT_MS) goto end;
     if (listing) (*listing)[total]=0;
     ok=listing || total==limit;
 end:
+    if (watch) {
+        SetEvent(guard.stop); WaitForSingleObject(watch,INFINITE); CloseHandle(watch);
+        if (guard.expired) ok=0;
+    }
+    if (guard.reader) CloseHandle(guard.reader);
+    if (guard.stop) CloseHandle(guard.stop);
+    if (job) { TerminateJobObject(job,1); CloseHandle(job); }
     if (pi.hProcess) {
-        if (WaitForSingleObject(pi.hProcess,0)!=WAIT_OBJECT_0) { TerminateProcess(pi.hProcess,1); WaitForSingleObject(pi.hProcess,5000); }
+        /* Also covers assignment failure: still suspended, no descendants possible. */
+        if (WaitForSingleObject(pi.hProcess,0)!=WAIT_OBJECT_0) { TerminateProcess(pi.hProcess,1); WaitForSingleObject(pi.hProcess,INFINITE); }
         CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
     }
     if(rd)CloseHandle(rd); if(wr)CloseHandle(wr); if(nul!=INVALID_HANDLE_VALUE)CloseHandle(nul);
