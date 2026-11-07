@@ -116,17 +116,51 @@ uint8_t zmem_read8(uint32_t addr) {
  * decompostos em bytes; writes apos a guard (< ZMEM_STACK_BASE) sao
  * descartados sem log para nao floodar o log do scan de Alice/TTDMM. */
 
+/* LE load/store de 4 bytes contiguos (host little-endian; byte a byte
+ * evita UB em desalinhamento). */
+static uint32_t load32_le(const uint8_t *p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+static void store32_le(uint8_t *p, uint32_t val) {
+    p[0] = (uint8_t)(val);
+    p[1] = (uint8_t)(val >> 8);
+    p[2] = (uint8_t)(val >> 16);
+    p[3] = (uint8_t)(val >> 24);
+}
+
 uint16_t zmem_read16(uint32_t addr) {
+    /* Fast-path ROM/codigo contiguo. */
+    if (addr <= ZMEM_RAM_SIZE - 2u && g_ram)
+        return (uint16_t)(g_ram[addr] | (g_ram[addr + 1] << 8));
+    if (addr >= ZMEM_HEAP_BASE &&
+        addr <= ZMEM_HEAP_BASE + ZMEM_HEAP_SIZE - 2u && g_heap) {
+        uint8_t *p = g_heap + (addr - ZMEM_HEAP_BASE);
+        return (uint16_t)(p[0] | (p[1] << 8));
+    }
     /* little-endian, tolera desalinhamento (le byte a byte) */
-    uint8_t *p0 = translate(addr);
-    uint8_t *p1 = translate(addr + 1);
-    if (!p0 || !p1) { log_bad_access("read16", addr); return 0; }
-    return (uint16_t)(p0[0] | (p1[0] << 8));
+    {
+        uint8_t *p0 = translate(addr);
+        uint8_t *p1 = translate(addr + 1);
+        if (!p0 || !p1) { log_bad_access("read16", addr); return 0; }
+        return (uint16_t)(p0[0] | (p1[0] << 8));
+    }
 }
 
 uint32_t zmem_read32(uint32_t addr) {
     uint8_t *p;
     uint32_t forced;
+    /* Fast-path ROM/codigo (0x00000000..ZMEM_RAM_SIZE): sem traps/ifile. */
+    if (addr <= ZMEM_RAM_SIZE - 4u && g_ram)
+        return load32_le(g_ram + addr);
+    /* Fast-path heap (0x10000000..0x11FFFFFF): ifile so em base de objeto. */
+    if (addr >= ZMEM_HEAP_BASE &&
+        addr <= ZMEM_HEAP_BASE + ZMEM_HEAP_SIZE - 4u && g_heap) {
+        forced = zbrew_ifile_force_vtbl_read(addr);
+        if (forced) return forced;
+        return load32_le(g_heap + (addr - ZMEM_HEAP_BASE));
+    }
     /* Regiao de traps HLE: retornar o proprio endereco (vtable auto-descritiva)
      * para que jogos que copiem vtables stubs como dados recebam ponteiros
      * validos que despacham handlers quando chamados. */
@@ -136,11 +170,8 @@ uint32_t zmem_read32(uint32_t addr) {
     forced = zbrew_ifile_force_vtbl_read(addr);
     if (forced) return forced;
     p = translate(addr);
-    if (p && translate(addr + 3) == p + 3) {
-        /* regiao contigua: monta little-endian */
-        return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
-               ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
-    }
+    if (p && translate(addr + 3) == p + 3)
+        return load32_le(p);
     if (!p) { log_bad_access("read32", addr); return 0; }
     return (uint32_t)zmem_read8(addr) |
            ((uint32_t)zmem_read8(addr + 1) << 8) |
@@ -175,129 +206,154 @@ void zmem_write16(uint32_t addr, uint16_t val) {
 }
 
 void zmem_write32(uint32_t addr, uint32_t val) {
+    /* Fast-path ROM/codigo: sem watches/ifile. */
+    if (addr <= ZMEM_RAM_SIZE - 4u && g_ram) {
+        store32_le(g_ram + addr, val);
+        return;
+    }
+    /* Fast-path heap: ifile bloqueia so a palavra [obj+0]. */
+    if (addr >= ZMEM_HEAP_BASE &&
+        addr <= ZMEM_HEAP_BASE + ZMEM_HEAP_SIZE - 4u && g_heap) {
+        if (zbrew_ifile_block_write(addr, 4))
+            return;
+#if !defined(NDEBUG)
+        {
+            static int watch_on = -1;
+            if (watch_on < 0)
+                watch_on = getenv("ZEEMU_MEM_WATCH") != NULL;
+            if (watch_on) {
+                if (addr >= 0x10001500u && addr <= 0x10001510u) {
+                    static uint32_t app24_hits = 0;
+                    if (app24_hits < 30) {
+                        LOGI("WATCH app24 write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
+                             addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
+                        app24_hits++;
+                    }
+                }
+                if (addr == 0x1000161Cu || addr == 0x10005F28u) {
+                    static uint32_t ctxc_hits = 0;
+                    if (ctxc_hits < 200) {
+                        LOGI("WATCH ctxC write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X "
+                             "vtable=[0x%08X]",
+                             addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR],
+                             zmem_read32(val));
+                        ctxc_hits++;
+                    }
+                }
+                if (addr == 0x10004BACu) {
+                    static uint32_t st_hits = 0;
+                    if (st_hits < 60) {
+                        LOGI("WATCH loadstate write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
+                             addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
+                        st_hits++;
+                    }
+                }
+                if (addr == 0x100124A8u && val == 0) {
+                    static uint32_t hits = 0;
+                    if (hits < 3) {
+                        LOGI("WATCH devvt ZERO: addr=0x%08X PC=0x%08X LR=0x%08X "
+                             "R0=0x%08X R1=0x%08X R2=0x%08X R3=0x%08X",
+                             addr, g_cpu.r[REG_PC], g_cpu.r[REG_LR],
+                             g_cpu.r[0], g_cpu.r[1], g_cpu.r[2], g_cpu.r[3]);
+                        ztrace_dump();
+                        hits++;
+                    }
+                }
+                if (addr == 0x100124A8u) {
+                    static uint32_t hits = 0;
+                    if (hits < 30) {
+                        LOGI("WATCH devvt write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
+                             addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
+                        hits++;
+                    }
+                }
+                if (addr == 0x100120F0u) {
+                    static uint32_t hits = 0;
+                    if (hits < 30) {
+                        LOGI("WATCH devslot write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
+                             addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
+                        hits++;
+                    }
+                }
+                if (addr >= 0x10011FE0u && addr <= 0x10012014u) {
+                    static uint32_t devzone_hits = 0;
+                    if (devzone_hits < 120) {
+                        LOGI("WATCH devzone write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
+                             addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
+                        devzone_hits++;
+                    }
+                }
+                if (addr >= 0x100059A0u && addr <= 0x100059B0u) {
+                    static uint32_t mgr_hits = 0;
+                    if (mgr_hits < 60) {
+                        LOGI("WATCH mgrstate write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
+                             addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
+                        mgr_hits++;
+                    }
+                }
+                if (addr == 0x10005BB8u || addr == 0x10005BBCu || addr == 0x10005BC0u) {
+                    static uint32_t tip_hits = 0;
+                    if (tip_hits < 60) {
+                        LOGI("WATCH tipstate write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
+                             addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
+                        tip_hits++;
+                    }
+                }
+                if (addr == 0x100D955Au || addr == 0x100D9552u || addr == 0x100D9556u) {
+                    static uint32_t list_hits = 0;
+                    if (list_hits < 40) {
+                        LOGI("WATCH listfield write16/32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
+                             addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
+                        list_hits++;
+                    }
+                }
+                if (addr >= 0x100059F0u && addr <= 0x10005A20u) {
+                    static uint32_t rl_hits = 0;
+                    if (rl_hits < 120) {
+                        LOGI("WATCH readobj write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
+                             addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
+                        rl_hits++;
+                    }
+                }
+            }
+        }
+#endif
+        store32_le(g_heap + (addr - ZMEM_HEAP_BASE), val);
+        return;
+    }
     if (zbrew_ifile_block_write(addr, 4))
         return;
-    if (addr >= 0x10001500u && addr <= 0x10001510u) {
-        static uint32_t app24_hits = 0;
-        if (app24_hits < 30) {
-            LOGI("WATCH app24 write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
-                 addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
-            app24_hits++;
-        }
-    }
-    /* tabptr watch removido: flood no init DE (Bad Dudes) apos RomLoaded. */
-    if (addr == 0x1000161Cu || addr == 0x10005F28u) {
-        static uint32_t ctxc_hits = 0;
-        if (ctxc_hits < 200) {
-            LOGI("WATCH ctxC write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X "
-                 "vtable=[0x%08X]",
-                 addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR], zmem_read32(val));
-            ctxc_hits++;
-        }
-    }
-    /* errfield watch removido: mesmo flood no decode de tabelas DE. */
-    if (addr == 0x10004BACu) {
-        static uint32_t st_hits = 0;
-        if (st_hits < 60) {
-            LOGI("WATCH loadstate write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
-                 addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
-            st_hits++;
-        }
-    }
-    if (addr == 0x100124A8u && val == 0) {
-        static uint32_t hits = 0;
-        if (hits < 3) {
-            LOGI("WATCH devvt ZERO: addr=0x%08X PC=0x%08X LR=0x%08X "
-                 "R0=0x%08X R1=0x%08X R2=0x%08X R3=0x%08X",
-                 addr, g_cpu.r[REG_PC], g_cpu.r[REG_LR],
-                 g_cpu.r[0], g_cpu.r[1], g_cpu.r[2], g_cpu.r[3]);
-            ztrace_dump();
-            hits++;
-        }
-    }
-    if (addr == 0x100124A8u) {
-        static uint32_t hits = 0;
-        if (hits < 30) {
-            LOGI("WATCH devvt write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
-                 addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
-            hits++;
-        }
-    }
-    if (addr == 0x100120F0u) {
-        static uint32_t hits = 0;
-        if (hits < 30) {
-            LOGI("WATCH devslot write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
-                 addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
-            hits++;
-        }
-    }
-    if (addr >= 0x10011FE0u && addr <= 0x10012014u) {
-        static uint32_t devzone_hits = 0;
-        if (devzone_hits < 120) {
-            LOGI("WATCH devzone write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
-                 addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
-            devzone_hits++;
-        }
-    }
-    if (addr >= 0x100059A0u && addr <= 0x100059B0u) {
-        static uint32_t mgr_hits = 0;
-        if (mgr_hits < 60) {
-            LOGI("WATCH mgrstate write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
-                 addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
-            mgr_hits++;
-        }
-    }
+#if !defined(NDEBUG)
     if (addr == 0x1CBB8u || addr == 0x1CBBCu) {
+        static int watch_on = -1;
         static uint32_t q_hits = 0;
-        if (q_hits < 60) {
+        if (watch_on < 0)
+            watch_on = getenv("ZEEMU_MEM_WATCH") != NULL;
+        if (watch_on && q_hits < 60) {
             LOGI("WATCH queuehead write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
                  addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
             q_hits++;
         }
     }
-    if (addr == 0x10005BB8u || addr == 0x10005BBCu || addr == 0x10005BC0u) {
-        static uint32_t tip_hits = 0;
-        if (tip_hits < 60) {
-            LOGI("WATCH tipstate write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
-                 addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
-            tip_hits++;
-        }
-    }
-    if (addr == 0x100D955Au || addr == 0x100D9552u || addr == 0x100D9556u) {
-        static uint32_t list_hits = 0;
-        if (list_hits < 40) {
-            LOGI("WATCH listfield write16/32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
-                 addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
-            list_hits++;
-        }
-    }
-    if (addr >= 0x100059F0u && addr <= 0x10005A20u) {
-        static uint32_t rl_hits = 0;
-        if (rl_hits < 120) {
-            LOGI("WATCH readobj write32: addr=0x%08X value=0x%08X PC=0x%08X LR=0x%08X",
-                 addr, val, g_cpu.r[REG_PC] - 8, g_cpu.r[REG_LR]);
-            rl_hits++;
-        }
-    }
-    uint8_t *p = translate(addr);
-    if (p && translate(addr + 3) == p + 3) {
-        p[0] = (uint8_t)(val);
-        p[1] = (uint8_t)(val >> 8);
-        p[2] = (uint8_t)(val >> 16);
-        p[3] = (uint8_t)(val >> 24);
-        return;
-    }
-    if (!p) {
-        if (addr >= ZMEM_GUARD_BASE && addr < ZMEM_STACK_BASE)
+#endif
+    {
+        uint8_t *p = translate(addr);
+        if (p && translate(addr + 3) == p + 3) {
+            store32_le(p, val);
             return;
-        if (addr < ZMEM_HEAP_BASE && addr >= ZMEM_RAM_SIZE)
-            return;
-        log_bad_access("write32", addr); return;
+        }
+        if (!p) {
+            if (addr >= ZMEM_GUARD_BASE && addr < ZMEM_STACK_BASE)
+                return;
+            if (addr < ZMEM_HEAP_BASE && addr >= ZMEM_RAM_SIZE)
+                return;
+            log_bad_access("write32", addr); return;
+        }
+        zmem_write8(addr,     (uint8_t)(val));
+        zmem_write8(addr + 1, (uint8_t)(val >> 8));
+        zmem_write8(addr + 2, (uint8_t)(val >> 16));
+        zmem_write8(addr + 3, (uint8_t)(val >> 24));
     }
-    zmem_write8(addr,     (uint8_t)(val));
-    zmem_write8(addr + 1, (uint8_t)(val >> 8));
-    zmem_write8(addr + 2, (uint8_t)(val >> 16));
-    zmem_write8(addr + 3, (uint8_t)(val >> 24));
 }
 /* Writes em buracos do mapa sao descartados sem log (ver zmem_write8).
  * Reads em buracos retornam 0 sem log (ver zmem_read8). Cross-boundary

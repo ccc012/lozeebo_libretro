@@ -1,5 +1,6 @@
 /* cpu.c - Loop fetch-decode-execute e controle da CPU */
 #include <string.h>
+#include <stdlib.h>
 #include "cpu.h"
 #include "../memory/memory.h"
 #include "../debug/log.h"
@@ -82,6 +83,32 @@ void zcpu_step(void) {
     }
 
     uint32_t pc = g_cpu.r[REG_PC];
+#if defined(NDEBUG)
+    /* Release: watches so sob ZEEMU_CPU_WATCH; HLE funcional fica no hot path. */
+    {
+        static int cpu_diag = -1;
+        if (cpu_diag < 0)
+            cpu_diag = getenv("ZEEMU_CPU_WATCH") != NULL;
+        if (!cpu_diag) {
+            if (pc == 0x0002A174u || pc == 0x0002BB64u)
+                goto zcpu_hle_uncompress;
+            if (pc == 0x000044B8u || pc == 0x00009D58u || pc == 0x00009B18u ||
+                pc == 0x0007D2BCu || pc == 0x00038E34u || pc == 0x00009CACu ||
+                pc == 0x0000A1FCu || pc == 0x0000A2A8u || pc == 0x0000A388u ||
+                pc == 0x0000957Cu || pc == 0x0000970Cu || pc == 0x00009754u)
+                (void)zgl_create_igles_interface();
+            if (pc == 0x0000957Cu && zboot_get_applet_clsid() == 0x0109AF55u)
+                goto zcpu_hle_zuma_rgb;
+            if (zboot_get_applet_clsid() == 0x0108AF6Cu &&
+                (pc == 0x00006E054u || pc == 0x00006E158u ||
+                 pc == 0x00006E238u || pc == 0x00006EC9Cu))
+                (void)zgl_create_igles_interface();
+            if (pc == 0x00000000u)
+                goto zcpu_pc_zero;
+            goto zcpu_step_hot;
+        }
+    }
+#endif
     /* Bad Dudes hang: bit-pack init at 0x186F80 / 0x187194. Dump width (r2)
      * + stack args; count every entry (caller loops layers). */
     if (pc == 0x00186F80u || pc == 0x00187194u) {
@@ -449,6 +476,9 @@ void zcpu_step(void) {
     /* Data East: zlib uncompress — tinfl HLE.
      * HB/BD @ 0x2A174; Caveman @ 0x2BB64 (mesmo corpo, base PIC).
      * r1=src r2=srcLen r3=dst [sp]=destLen (r0 unused / out scratch). */
+#if defined(NDEBUG)
+zcpu_hle_uncompress:
+#endif
     if (pc == 0x0002A174u || pc == 0x0002BB64u) {
         uint32_t src = g_cpu.r[1];
         uint32_t src_len = g_cpu.r[2];
@@ -547,6 +577,9 @@ void zcpu_step(void) {
         (void)zgl_create_igles_interface();
     /* HLE: intercepta BL 957C. r0=&tex_obj, r1=bmp, r2=pot_w, r3=pot_h.
      * Preenche [tex+1C/20/24] como o helper; upload RGB565 no host; retorna. */
+#if defined(NDEBUG)
+zcpu_hle_zuma_rgb:
+#endif
     if (pc == 0x0000957Cu && zboot_get_applet_clsid() == 0x0109AF55u) {
         uint32_t tobj = g_cpu.r[0] ? zmem_read32(g_cpu.r[0]) : 0;
         uint32_t bmp = g_cpu.r[1];
@@ -701,6 +734,9 @@ void zcpu_step(void) {
             hits_bx++;
         }
     }
+#if defined(NDEBUG)
+zcpu_pc_zero:
+#endif
     if (pc == 0x00000000u) {
         static uint32_t hits = 0;
         if (hits < 600) {
@@ -739,6 +775,9 @@ void zcpu_step(void) {
             hits++;
         }
     }
+#if defined(NDEBUG)
+zcpu_step_hot:
+#endif
     ztrace_pc(pc);
 
     /* Diagnostico: primeiro acesso a regiao de heap alto (0x11F00000+),

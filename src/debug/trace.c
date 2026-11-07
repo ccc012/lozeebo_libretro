@@ -20,29 +20,39 @@ void ztrace_dump(void);
 static void zhist_dump(void);
 
 void ztrace_pc(uint32_t pc) {
-    static int profile = -1;
-    g_trace[g_trace_pos++ & (ZTRACE_SIZE - 1)] = pc;
-    if (profile < 0) profile = getenv("ZEEMU_PROFILE_PC") != NULL;
-    if (!profile) return;
-    if ((pc & ~0xFFFu) < 0x01000000u)
-        g_hist[(pc >> 12) & (ZHIST_BUCKETS - 1)]++;
-    if (!g_hist_done) {
-        static uint32_t acc = 0;
-        if (++acc < (1u << 22))
-            return;
-        g_hist_done = 1;
-    } else {
-        static uint32_t win = 0;
-        if (++win < (1u << 22))
-            return;
-        win = 0;
+#if defined(NDEBUG)
+    /* Release: ring + hist so sob ZEEMU_TRACE_PC / ZEEMU_PROFILE_PC. */
+    static int enabled = -1;
+    if (enabled < 0)
+        enabled = (getenv("ZEEMU_TRACE_PC") != NULL) ||
+                  (getenv("ZEEMU_PROFILE_PC") != NULL);
+    if (!enabled) return;
+#endif
+    {
+        static int profile = -1;
+        g_trace[g_trace_pos++ & (ZTRACE_SIZE - 1)] = pc;
+        if (profile < 0) profile = getenv("ZEEMU_PROFILE_PC") != NULL;
+        if (!profile) return;
+        if ((pc & ~0xFFFu) < 0x01000000u)
+            g_hist[(pc >> 12) & (ZHIST_BUCKETS - 1)]++;
+        if (!g_hist_done) {
+            static uint32_t acc = 0;
+            if (++acc < (1u << 22))
+                return;
+            g_hist_done = 1;
+        } else {
+            static uint32_t win = 0;
+            if (++win < (1u << 22))
+                return;
+            win = 0;
+        }
+        zhist_dump();
+        ztrace_dump();
+        memset(g_hist, 0, sizeof(g_hist));
     }
-    zhist_dump();
-    ztrace_dump();
-    memset(g_hist, 0, sizeof(g_hist));
 }
 
-void zhist_dump(void) {
+static void zhist_dump(void) {
     int best[12] = { 0 }, i, j;
     uint32_t bcount[12] = { 0 };
     for (i = 0; i < ZHIST_BUCKETS; i++) {

@@ -2,31 +2,28 @@
 #include "cpu.h"
 
 bool zcpu_cond_pass(uint32_t cond) {
-    uint32_t c = g_cpu.cpsr;
-    bool n = (c & CPSR_N) != 0;
-    bool z = (c & CPSR_Z) != 0;
-    bool cf = (c & CPSR_C) != 0;
-    bool v = (c & CPSR_V) != 0;
-
-    switch (cond & 0xF) {
-        case 0x0: return z;              /* EQ */
-        case 0x1: return !z;             /* NE */
-        case 0x2: return cf;             /* CS/HS */
-        case 0x3: return !cf;            /* CC/LO */
-        case 0x4: return n;              /* MI */
-        case 0x5: return !n;             /* PL */
-        case 0x6: return v;              /* VS */
-        case 0x7: return !v;             /* VC */
-        case 0x8: return cf && !z;       /* HI */
-        case 0x9: return !cf || z;       /* LS */
-        case 0xA: return n == v;         /* GE */
-        case 0xB: return n != v;         /* LT */
-        case 0xC: return !z && (n == v); /* GT */
-        case 0xD: return z || (n != v);  /* LE */
-        case 0xE: return true;           /* AL */
-        case 0xF: return true;           /* NV - tratado como especial fora */
-    }
-    return true;
+    /* NZCV empacotado em nibble: bit3=N bit2=Z bit1=C bit0=V.
+     * Lookup 16x16: linha=cond, coluna=flags. AL/NV sempre 1. */
+    static const uint16_t k_cond[16] = {
+        /* EQ */ 0xF0F0u, /* Z */
+        /* NE */ 0x0F0Fu, /* !Z */
+        /* CS */ 0xCCCCu, /* C */
+        /* CC */ 0x3333u, /* !C */
+        /* MI */ 0xFF00u, /* N */
+        /* PL */ 0x00FFu, /* !N */
+        /* VS */ 0xAAAAu, /* V */
+        /* VC */ 0x5555u, /* !V */
+        /* HI */ 0x0C0Cu, /* C && !Z */
+        /* LS */ 0xF3F3u, /* !C || Z */
+        /* GE */ 0xAA55u, /* N == V */
+        /* LT */ 0x55AAu, /* N != V */
+        /* GT */ 0x0A05u, /* !Z && N==V */
+        /* LE */ 0xF5FAu, /* Z || N!=V */
+        /* AL */ 0xFFFFu,
+        /* NV */ 0xFFFFu
+    };
+    uint32_t flags = (g_cpu.cpsr >> 28) & 0xFu;
+    return (k_cond[cond & 0xFu] >> flags) & 1u;
 }
 
 void zflags_nz(uint32_t result) {

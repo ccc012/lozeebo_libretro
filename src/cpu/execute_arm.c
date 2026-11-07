@@ -321,7 +321,8 @@ void zarm_execute(uint32_t instr) {
         return;
     }
 
-    if (!zcpu_cond_pass(cond)) return;
+    /* AL (0xE) e o caso comum — evita lookup. */
+    if (cond != 0xEu && !zcpu_cond_pass(cond)) return;
 
     uint32_t op = (instr >> 25) & 7;
 
