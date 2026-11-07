@@ -5,23 +5,45 @@
 param(
     [int]$Frames = 180,
     [string]$Mod = "D:\Temp\zeebo_all\Um_Jogo_de_Ovos__Brazil___Es_Pt_\mod\279036\game.mod",
-    [string]$Build = "build-ovos\Release",
-    [string]$OutDir = "artifacts\ovos-gate"
+    [string]$BuildDir = "build-ovos-gate",
+    [string]$OutDir = "artifacts\ovos-gate",
+    [switch]$SkipBuild
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $root
 
-$smoke = Join-Path $root (Join-Path $Build "libretro_smoke.exe")
-$core  = Join-Path $root (Join-Path $Build "lozeebo_libretro.dll")
-if (-not (Test-Path $smoke)) { throw "missing $smoke - build with ZEEBO_BUILD_SMOKE_TEST=ON Release" }
-if (-not (Test-Path $core))  { throw "missing $core" }
-if (-not (Test-Path $Mod))   { throw "missing mod $Mod" }
+function Fail([string]$msg) {
+    Write-Host "FAIL: $msg" -ForegroundColor Red
+    exit 1
+}
+
+if (-not (Test-Path $Mod)) { Fail "missing mod $Mod" }
+
+$rel = Join-Path $root "$BuildDir\Release"
+$smoke = Join-Path $rel "libretro_smoke.exe"
+$core  = Join-Path $rel "lozeebo_libretro.dll"
+
+if (-not $SkipBuild) {
+    $needConfigure = -not (Test-Path (Join-Path $root "$BuildDir\CMakeCache.txt"))
+    if ($needConfigure) {
+        Write-Host "cmake configure $BuildDir..."
+        & cmake -S $root -B (Join-Path $root $BuildDir) -DZEEBO_BUILD_SMOKE_TEST=ON
+        if ($LASTEXITCODE -ne 0) { Fail "cmake configure failed" }
+    }
+    Write-Host "cmake build Release..."
+    & cmake --build (Join-Path $root $BuildDir) --config Release
+    if ($LASTEXITCODE -ne 0) { Fail "cmake build failed" }
+}
+
+if (-not (Test-Path $smoke)) { Fail "missing $smoke" }
+if (-not (Test-Path $core))  { Fail "missing $core" }
 
 $out = Join-Path $root $OutDir
 New-Item -ItemType Directory -Force $out | Out-Null
 $ppm = Join-Path $out ("f{0}.ppm" -f $Frames)
 $log = Join-Path $out ("f{0}.log" -f $Frames)
+Remove-Item $ppm, $log -ErrorAction SilentlyContinue
 
 Remove-Item Env:ZEEMU_SMOKE_SEQ -ErrorAction SilentlyContinue
 Remove-Item Env:ZEEMU_SMOKE_BUTTON -ErrorAction SilentlyContinue
@@ -30,14 +52,14 @@ Remove-Item Env:ZEEMU_SMOKE_DUMP_DIR -ErrorAction SilentlyContinue
 $env:ZEEMU_SMOKE_HOLD_FRAMES = "0"
 $env:ZEEMU_SMOKE_MAX_SECONDS = [string]([Math]::Max(120, [int]($Frames / 2) + 60))
 
-$p = Start-Process -FilePath $smoke -ArgumentList @($core, $Mod, $ppm, "$Frames") `
-    -NoNewWindow -Wait -PassThru -RedirectStandardError $log
-$exit = $p.ExitCode
+Write-Host "smoke ${Frames}f mod=$Mod"
+$cmdLine = "`"$smoke`" `"$core`" `"$Mod`" `"$ppm`" $Frames 2>`"$log`""
+cmd /c $cmdLine
+$exit = $LASTEXITCODE
 
-$summary = Select-String -Path $log -Pattern "\[SMOKE-SUMMARY\]" | Select-Object -Last 1
+$summary = Select-String -Path $log -Pattern "\[SMOKE-SUMMARY\]" -ErrorAction SilentlyContinue | Select-Object -Last 1
 if (-not $summary) {
-    Write-Host "FAIL: no SMOKE-SUMMARY (exit=$exit)"
-    exit 1
+    Fail "no SMOKE-SUMMARY (exit=$exit)"
 }
 $line = $summary.Line
 Write-Host $line
@@ -58,8 +80,7 @@ if ($badStack -gt 0) { $fail += "STACK=$badStack" }
 if ($badDesc -gt 0) { $fail += "descarril=$badDesc" }
 
 if ($fail.Count -gt 0) {
-    Write-Host ("FAIL: " + ($fail -join ", "))
-    exit 1
+    Fail ($fail -join ", ")
 }
 
 $hash = (Get-FileHash $ppm -Algorithm SHA256).Hash
