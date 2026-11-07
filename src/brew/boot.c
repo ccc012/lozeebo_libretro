@@ -1685,6 +1685,11 @@ void zboot_tick(uint32_t elapsed_ms) {
                 { ZKEY_C,     2,  0x0106C40Cu },
                 { ZKEY_MENU,  8,  0x0106C403u }, /* START → HOME */
                 { ZKEY_BACK,  8,  0x0106C403u },
+                /* DD @0x7CC..0x7FC consumes directional button UIDs. */
+                { ZKEY_UP,   12,  0x0106C3FEu },
+                { ZKEY_LEFT, 13,  0x0106C3FFu },
+                { ZKEY_DOWN, 14,  0x0106C400u },
+                { ZKEY_RIGHT,15,  0x0106C401u },
             };
             const zhid_map_t *map = dd ? map_dd : map_std;
             const unsigned map_n = dd ? (unsigned)(sizeof(map_dd) / sizeof(map_dd[0]))
