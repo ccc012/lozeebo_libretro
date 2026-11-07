@@ -124,6 +124,8 @@ else()
 endif()
 
 if(ZEEBO_BUILD_SMOKE_TEST AND NOT ZEEBO_PLATFORM_CONSOLE)
+    add_executable(audio_adpcm_rate tests/audio_adpcm_rate.c
+        src/audio/audio.c src/audio/mixer.c src/audio/pcm.c src/audio/adpcm.c)
     add_executable(libretro_smoke tests/libretro_smoke.c)
     set_target_properties(libretro_smoke PROPERTIES
         C_STANDARD 99

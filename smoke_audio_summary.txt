@@ -1,1 +1,1 @@
-video_frames=900 audio_frames=661500 audio_nonzero=927840 audio_peak=30396
+video_frames=900 audio_frames=661500 audio_nonzero=651004 audio_peak=25700

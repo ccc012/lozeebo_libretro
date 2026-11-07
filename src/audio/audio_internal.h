@@ -18,6 +18,7 @@ typedef struct zvoice_t {
     bool     paused;      /* pausado (IAudio control) */
     bool     muted;       /* mute explícito */
     void    *adpcm;       /* decoder ADPCM (zimad_state) quando fmt=ZPCM_ADPCM */
+    int16_t  adpcm_sample; /* sample retido entre frames do resampler */
     int8_t   pan;         /* -128..+127, 0 = centro */
 } zvoice_t;
 
