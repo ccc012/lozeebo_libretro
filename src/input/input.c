@@ -5,6 +5,7 @@
 static uint32_t g_keys[2];
 static uint32_t g_prev_keys[2];
 static int16_t  g_ax[2], g_ay[2];
+static int16_t  g_rx[2], g_ry[2];
 
 void zinput_update(bool up, bool down, bool left, bool right,
                    bool a, bool b, bool y, bool start, bool select) {
@@ -25,6 +26,13 @@ void zinput_update_analog(int player, int16_t ax, int16_t ay) {
     if (player >= 0 && player < 2) {
         g_ax[player] = ax;
         g_ay[player] = ay;
+    }
+}
+
+void zinput_update_analog_right(int player, int16_t ax, int16_t ay) {
+    if (player >= 0 && player < 2) {
+        g_rx[player] = ax;
+        g_ry[player] = ay;
     }
 }
 
@@ -74,6 +82,16 @@ uint32_t zinput_left_stick_y(void) {
     if (g_keys[0] & ZKEY_UP)   return ZSTICK_MIN;
     if (g_keys[0] & ZKEY_DOWN) return ZSTICK_MAX;
     if (g_ay[0] < -16384 || g_ay[0] > 16384) return analog_to_axis(g_ay[0]);
+    return ZSTICK_CENTER;
+}
+
+uint32_t zinput_right_stick_x(void) {
+    if (g_rx[0] < -16384 || g_rx[0] > 16384) return analog_to_axis(g_rx[0]);
+    return ZSTICK_CENTER;
+}
+
+uint32_t zinput_right_stick_y(void) {
+    if (g_ry[0] < -16384 || g_ry[0] > 16384) return analog_to_axis(g_ry[0]);
     return ZSTICK_CENTER;
 }
 

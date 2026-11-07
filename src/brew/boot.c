@@ -1704,27 +1704,34 @@ void zboot_tick(uint32_t elapsed_ms) {
     }
 
     /* Posicao do stick analogico (IHIDDevice position): quando o D-pad
-     * (espelhado nos eixos) muda, acorda o callback de RegisterForPositionChange
-     * para jogos que navegam menus por posicao (ex: Family Pack) em vez de
-     * por eventos de botao. GetPositionState (case 10) devolve os eixos. */
+     * (espelhado nos eixos) ou stick direito (Rx/Ry) muda, acorda o callback
+     * de RegisterForPositionChange. GetPositionState (case 10) devolve eixos.
+     * Z/Rz ficam 0 (unsupported, como zeemu). */
     {
         uint32_t lx = zinput_left_stick_x();
         uint32_t ly = zinput_left_stick_y();
-        if (lx != g_hid_axis_lx || ly != g_hid_axis_ly) {
+        uint32_t rx = zinput_right_stick_x();
+        uint32_t ry = zinput_right_stick_y();
+        if (lx != g_hid_axis_lx || ly != g_hid_axis_ly ||
+            rx != g_hid_axis_rx || ry != g_hid_axis_ry) {
             g_hid_axis_lx = lx;
             g_hid_axis_ly = ly;
+            g_hid_axis_rx = rx;
+            g_hid_axis_ry = ry;
             /* Voltou ao centro (release): NAO acorda o signal. O signal de
              * position so leva o cursor; ao soltar, o jogo chama um handler
              * de menu via ponteiro nao preparado (crash 0xE5053004). Soltar
              * o stick so "libera" - nenhum callback espera esse estado. */
-            if (lx == 0x8000u && ly == 0x8000u)
+            if (lx == 0x8000u && ly == 0x8000u &&
+                rx == 0x8000u && ry == 0x8000u)
                 return;
             if (g_hid_position_signal) {
                 uint32_t callback = zmem_read32(g_hid_position_signal + 4);
                 uint32_t user = zmem_read32(g_hid_position_signal + 8);
                 if (getenv("ZEEMU_TRACE_HID")) {
-                    LOGI("HID: position lx=0x%04X ly=0x%04X callback=0x%08X "
-                         "user=0x%08X", lx, ly, callback, user);
+                    LOGI("HID: position lx=0x%04X ly=0x%04X rx=0x%04X ry=0x%04X "
+                         "callback=0x%08X user=0x%08X",
+                         lx, ly, rx, ry, callback, user);
                 }
                 zboot_signal_fire(g_hid_position_signal, "hid-position");
                 if (zboot_signal_drain_one())
@@ -3259,7 +3266,17 @@ void zbrew_handle_stub(uint32_t id) {
                                          g_hid_axis_rx, g_hid_axis_ry);
             if (g_cpu.r[2] && g_cpu.r[2] < ZDISPLAY_ADDR_MAX &&
                 g_cpu.r[2] != g_cpu.r[0])
-                zmem_write32(g_cpu.r[2], 4);
+                zmem_write32(g_cpu.r[2], 4); /* X Y Rx Ry; Z/Rz unsupported */
+            {
+                static unsigned gps_n;
+                if (gps_n < 32u || (gps_n % 200u) == 0u) {
+                    LOGI("HID: GetPositionState n=%u lx=0x%04X ly=0x%04X "
+                         "rx=0x%04X ry=0x%04X z=0 rz=0",
+                         gps_n, g_hid_axis_lx, g_hid_axis_ly,
+                         g_hid_axis_rx, g_hid_axis_ry);
+                }
+                gps_n++;
+            }
             g_cpu.r[0] = 0;
             break;
         }

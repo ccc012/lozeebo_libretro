@@ -1,0 +1,1 @@
+video_frames=4800 audio_frames=3528000 audio_nonzero=4995150 audio_peak=32768

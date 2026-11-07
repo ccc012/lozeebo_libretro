@@ -155,22 +155,34 @@ static unsigned smoke_button_id(void) {
     return RETRO_DEVICE_ID_JOYPAD_A;
 }
 
-/* Sequencia de input via ZEEMU_SMOKE_SEQ: "UP:1100,A:1130,DOWN:1200:30"
- * Cada item = BOTAO:FRAME[:HOLD]. Botao segura por HOLD frames (padrao
- * ZEEMU_SMOKE_HOLD_FRAMES). Permite testar navegacao+selecao num run so. */
+/* Sequencia via ZEEMU_SMOKE_SEQ: "UP:1100,A:1130,RX+:1600:30,AX-:1700:20"
+ * Item = TOKEN:FRAME[:HOLD]. Tokens digitais = Joypad; AX+/AX-/AY+/AY-/
+ * RX+/RX-/RY+/RY- = analogicos (stick L/R). HOLD padrao ZEEMU_SMOKE_HOLD_FRAMES. */
+enum {
+    SMOKE_KIND_PAD = 0,
+    SMOKE_KIND_AX_P, SMOKE_KIND_AX_M,
+    SMOKE_KIND_AY_P, SMOKE_KIND_AY_M,
+    SMOKE_KIND_RX_P, SMOKE_KIND_RX_M,
+    SMOKE_KIND_RY_P, SMOKE_KIND_RY_M
+};
+
 typedef struct {
-    unsigned id;
+    unsigned kind;   /* SMOKE_KIND_* */
+    unsigned id;     /* Joypad id se kind==PAD */
     unsigned frame;
     unsigned hold;
 } smoke_seq_item_t;
 
+#define SMOKE_SEQ_MAX 256
+#define SMOKE_SEQ_BUF 4096
+
 static const smoke_seq_item_t *smoke_seq_items(int *count)
 {
-    static smoke_seq_item_t items[128];
+    static smoke_seq_item_t items[SMOKE_SEQ_MAX];
     static int parsed = 0;
     static int parsed_n = 0;
     const char *v = getenv("ZEEMU_SMOKE_SEQ");
-    char buf[2048];
+    char buf[SMOKE_SEQ_BUF];
     char *tok, *save;
     int n = 0;
     if (parsed) {
@@ -186,11 +198,12 @@ static const smoke_seq_item_t *smoke_seq_items(int *count)
     strncpy(buf, v, sizeof(buf) - 1);
     buf[sizeof(buf) - 1] = 0;
     tok = strtok_s(buf, ",", &save);
-    while (tok && n < 128) {
+    while (tok && n < SMOKE_SEQ_MAX) {
         char btn[32];
         unsigned frame = 0, hold = 0;
         int field = sscanf(tok, "%31[^:]%*[:]%u%*[:]%u", btn, &frame, &hold);
         if (field >= 2) {
+            unsigned kind = SMOKE_KIND_PAD;
             unsigned id = RETRO_DEVICE_ID_JOYPAD_A;
             if (!strcmp(btn, "START")) id = RETRO_DEVICE_ID_JOYPAD_START;
             else if (!strcmp(btn, "A")) id = RETRO_DEVICE_ID_JOYPAD_A;
@@ -199,6 +212,16 @@ static const smoke_seq_item_t *smoke_seq_items(int *count)
             else if (!strcmp(btn, "DOWN")) id = RETRO_DEVICE_ID_JOYPAD_DOWN;
             else if (!strcmp(btn, "LEFT")) id = RETRO_DEVICE_ID_JOYPAD_LEFT;
             else if (!strcmp(btn, "RIGHT")) id = RETRO_DEVICE_ID_JOYPAD_RIGHT;
+            else if (!strcmp(btn, "AX+")) kind = SMOKE_KIND_AX_P;
+            else if (!strcmp(btn, "AX-")) kind = SMOKE_KIND_AX_M;
+            else if (!strcmp(btn, "AY+")) kind = SMOKE_KIND_AY_P;
+            else if (!strcmp(btn, "AY-")) kind = SMOKE_KIND_AY_M;
+            else if (!strcmp(btn, "RX+")) kind = SMOKE_KIND_RX_P;
+            else if (!strcmp(btn, "RX-")) kind = SMOKE_KIND_RX_M;
+            else if (!strcmp(btn, "RY+")) kind = SMOKE_KIND_RY_P;
+            else if (!strcmp(btn, "RY-")) kind = SMOKE_KIND_RY_M;
+            else { tok = strtok_s(NULL, ",", &save); continue; }
+            items[n].kind = kind;
             items[n].id = id;
             items[n].frame = frame;
             items[n].hold = (field >= 3 && hold) ? hold : smoke_hold_frames();
@@ -212,14 +235,67 @@ static const smoke_seq_item_t *smoke_seq_items(int *count)
     return items;
 }
 
+static int16_t smoke_analog_active(unsigned want_kind, unsigned index, unsigned id)
+{
+    int seq_n;
+    const smoke_seq_item_t *seq = smoke_seq_items(&seq_n);
+    int i;
+    for (i = 0; i < seq_n; i++) {
+        if (seq[i].kind != want_kind) continue;
+        if (input_frame >= seq[i].frame &&
+            input_frame < seq[i].frame + seq[i].hold) {
+            static unsigned last_alog = 0xFFFFFFFFu;
+            if (input_frame != last_alog) {
+                fprintf(stderr, "[SMOKE-SEQ] frame=%u analog kind=%u\n",
+                        input_frame, want_kind);
+                last_alog = input_frame;
+            }
+            return (want_kind == SMOKE_KIND_AX_M || want_kind == SMOKE_KIND_AY_M ||
+                    want_kind == SMOKE_KIND_RX_M || want_kind == SMOKE_KIND_RY_M)
+                       ? (int16_t)-32000 : (int16_t)32000;
+        }
+    }
+    (void)index; (void)id;
+    return 0;
+}
+
 static int16_t input_state(unsigned port, unsigned device,
                            unsigned index, unsigned id)
 {
     unsigned press, hold;
     int seq_n;
     const smoke_seq_item_t *seq;
-    (void)index;
-    if (port != 0 || device != RETRO_DEVICE_JOYPAD)
+    if (port != 0)
+        return 0;
+    if (device == RETRO_DEVICE_ANALOG) {
+        /* LEFT index=0 X/Y; RIGHT index=1 X/Y */
+        if (index == RETRO_DEVICE_INDEX_ANALOG_LEFT &&
+            id == RETRO_DEVICE_ID_ANALOG_X) {
+            int16_t v = smoke_analog_active(SMOKE_KIND_AX_P, index, id);
+            if (!v) v = smoke_analog_active(SMOKE_KIND_AX_M, index, id);
+            return v;
+        }
+        if (index == RETRO_DEVICE_INDEX_ANALOG_LEFT &&
+            id == RETRO_DEVICE_ID_ANALOG_Y) {
+            int16_t v = smoke_analog_active(SMOKE_KIND_AY_P, index, id);
+            if (!v) v = smoke_analog_active(SMOKE_KIND_AY_M, index, id);
+            return v;
+        }
+        if (index == RETRO_DEVICE_INDEX_ANALOG_RIGHT &&
+            id == RETRO_DEVICE_ID_ANALOG_X) {
+            int16_t v = smoke_analog_active(SMOKE_KIND_RX_P, index, id);
+            if (!v) v = smoke_analog_active(SMOKE_KIND_RX_M, index, id);
+            return v;
+        }
+        if (index == RETRO_DEVICE_INDEX_ANALOG_RIGHT &&
+            id == RETRO_DEVICE_ID_ANALOG_Y) {
+            int16_t v = smoke_analog_active(SMOKE_KIND_RY_P, index, id);
+            if (!v) v = smoke_analog_active(SMOKE_KIND_RY_M, index, id);
+            return v;
+        }
+        return 0;
+    }
+    if (device != RETRO_DEVICE_JOYPAD)
         return 0;
     press = smoke_press_frame();
     hold = smoke_hold_frames();
@@ -235,6 +311,7 @@ static int16_t input_state(unsigned port, unsigned device,
     }
     seq = smoke_seq_items(&seq_n);
     for (int i = 0; i < seq_n; i++) {
+        if (seq[i].kind != SMOKE_KIND_PAD) continue;
         if (id == seq[i].id &&
             input_frame >= seq[i].frame &&
             input_frame < seq[i].frame + seq[i].hold) {

@@ -20,8 +20,10 @@
 void zinput_update(bool up, bool down, bool left, bool right,
                    bool a, bool b, bool y, bool start, bool select);
 
-/* Atualiza eixos analogicos reais do RetroPad (player 0 ou 1) */
+/* Atualiza eixos analogicos reais do RetroPad (player 0 ou 1).
+ * left = LeftThumb X/Y; right = RightThumb Rx/Ry. */
 void zinput_update_analog(int player, int16_t ax, int16_t ay);
+void zinput_update_analog_right(int player, int16_t ax, int16_t ay);
 /* Atualiza teclas do player 2 (bitmask direto) */
 void zinput_update_p2(uint32_t keys);
 
@@ -33,9 +35,11 @@ uint32_t zinput_key_down(void);
 /* Eixos analogicos (0..0xffff, centro 0x8000). Prioridade: D-pad > analogico.
  * Jogos como Family Pack navegam o menu via IHIDDevice position em vez de
  * botoes; espelhar o D-pad no stick esquerdo faz o jogo enxergar o
- * cursor analogico na tela de titulo. */
+ * cursor analogico na tela de titulo. Stick direito = Rx/Ry (tilt/camera). */
 uint32_t zinput_left_stick_x(void);
 uint32_t zinput_left_stick_y(void);
+uint32_t zinput_right_stick_x(void);
+uint32_t zinput_right_stick_y(void);
 
 /* Teclas que mudaram desde o frame anterior (para eventos EVT_KEY) */
 uint32_t zinput_pressed(void);   /* transicao 0->1 */

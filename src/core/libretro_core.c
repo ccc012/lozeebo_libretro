@@ -164,14 +164,17 @@ static struct retro_core_option_v2_definition g_option_defs[] = {
         "zeebo_frameskip",
         "Frameskip",
         "Frameskip",
-        "Stub: only disabled is safe this round. Real skip deferred (preserve FP).",
-        "Stub: only disabled is safe this round. Real skip deferred (preserve FP).",
+        "Skip N frames between renders. Higher = faster but choppier. Use if <10 FPS.",
+        "Skip N frames between renders. Higher = faster but choppier. Use if <10 FPS.",
         "performance",
         {
-            { "disabled", "Disabled" },
+            { "0", "Disabled" },
+            { "1", "Skip 1" },
+            { "2", "Skip 2" },
+            { "3", "Skip 3" },
             { NULL, NULL }
         },
-        "disabled"
+        "0"
     },
     {
         NULL, NULL, NULL, NULL, NULL, NULL,
@@ -191,7 +194,7 @@ static struct retro_variable g_legacy_variables[] = {
     { "zeebo_profile_pc", "Profile PC; disabled|enabled" },
     { "zeebo_trace_timer", "Trace Timer; disabled|enabled" },
     { "zeebo_log_level", "Log Level; error|warn|info|debug" },
-    { "zeebo_frameskip", "Frameskip; disabled" },
+    { "zeebo_frameskip", "Frameskip; 0|1|2|3" },
     { NULL, NULL }
 };
 
@@ -548,12 +551,21 @@ static void poll_input(void) {
                   PAD(A), PAD(B), PAD(Y), PAD(START), PAD(SELECT));
 #undef PAD
 
-    /* Analogico real do RetroPad (player 0) */
+    /* Analogico real do RetroPad (player 0): left=X/Y, right=Rx/Ry */
     int16_t ax = input_state_cb(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,
                                 RETRO_DEVICE_ID_ANALOG_X);
     int16_t ay = input_state_cb(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,
                                 RETRO_DEVICE_ID_ANALOG_Y);
     zinput_update_analog(0, ax, ay);
+    {
+        int16_t rx = input_state_cb(0, RETRO_DEVICE_ANALOG,
+                                    RETRO_DEVICE_INDEX_ANALOG_RIGHT,
+                                    RETRO_DEVICE_ID_ANALOG_X);
+        int16_t ry = input_state_cb(0, RETRO_DEVICE_ANALOG,
+                                    RETRO_DEVICE_INDEX_ANALOG_RIGHT,
+                                    RETRO_DEVICE_ID_ANALOG_Y);
+        zinput_update_analog_right(0, rx, ry);
+    }
 
     /* Player 2 (digital apenas por enquanto) */
 #define PAD2(btn) (input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, \
