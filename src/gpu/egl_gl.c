@@ -1077,9 +1077,10 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
 
     if (!fb)
         return;
-    /* Triangulos totalmente transparentes nao alteram color buffer. Menus do
-     * Family Pack enviam muitos sprites ocultos; evita varrer 640x480 neles. */
-    if (v0->ca <= 0.f && v1->ca <= 0.f && v2->ca <= 0.f)
+    /* Alpha do vertice so torna o fragmento inerte quando o estado GL o usa.
+     * Sem blend/alpha-test, RGB ainda deve ser escrito mesmo com alpha zero. */
+    if (v0->ca <= 0.f && v1->ca <= 0.f && v2->ca <= 0.f &&
+        (g_en_alpha || (g_en_blend && g_blend_src == 0x0302u)))
         return;
     /* Zuma: Enable(TEXTURE_2D) pode nao sobreviver; se texcoord client
      * state ligado, amostrar a textura bound. */
