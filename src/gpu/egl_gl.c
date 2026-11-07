@@ -509,6 +509,20 @@ static void mtx_load_guest_fixed(float *m, uint32_t addr)
         m[i] = fx_to_f(zmem_read32(addr + (uint32_t)i * 4));
 }
 
+static void mtx_load_guest_float(float *m, uint32_t addr)
+{
+    int i;
+    for (i = 0; i < 16; i++) {
+        uint32_t bits = zmem_read32(addr + (uint32_t)i * 4);
+        float f;
+        memcpy(&f, &bits, 4);
+        m[i] = f;
+    }
+}
+
+/* 1 = proxima Load/MultMatrixx veio de slot float (matriz IEEE754). */
+static int g_mtx_load_float = 0;
+
 static void zgl_reset_raster(void)
 {
     int i;
@@ -964,6 +978,8 @@ typedef struct {
     float cr, cg, cb, ca;
 } zgl_vtx_t;
 
+static bool g_pixel_space_draw = false;
+
 static bool transform_vertex(int idx, zgl_vtx_t *out)
 {
     float in[4] = {0.f, 0.f, 0.f, 1.f};
@@ -974,18 +990,26 @@ static bool transform_vertex(int idx, zgl_vtx_t *out)
     for (i = 0; i < 4; i++)
         eye[i] = g_m_mv[0 * 4 + i] * in[0] + g_m_mv[1 * 4 + i] * in[1] +
                  g_m_mv[2 * 4 + i] * in[2] + g_m_mv[3 * 4 + i] * in[3];
-    for (i = 0; i < 4; i++)
-        clip[i] = g_m_pj[0 * 4 + i] * eye[0] + g_m_pj[1 * 4 + i] * eye[1] +
-                  g_m_pj[2 * 4 + i] * eye[2] + g_m_pj[3 * 4 + i] * eye[3];
-    if (clip[3] <= 0.0001f && clip[3] >= -0.0001f)
-        return false;
-    {
-        float inv_w = 1.0f / clip[3];
-        float nx = clip[0] * inv_w, ny = clip[1] * inv_w;
-        out->sx = ((nx * 0.5f) + 0.5f) * (float)g_gl_viewport_w +
-                  (float)g_gl_viewport_x;
-        out->sy = ((-ny * 0.5f) + 0.5f) * (float)g_gl_viewport_h +
-                  (float)g_gl_viewport_y;
+    /* ponytail: FP alterna sprites 3D normalizados e UI centrada em pixels sem
+     * trocar a frustum. Detectar apenas z=0 + coordenada >16; remover quando a
+     * chamada/projecao 2D omitida pelo driver Qualcomm for identificada. */
+    if (g_pixel_space_draw) {
+        out->sx = eye[0] + (float)g_gl_viewport_w * 0.5f + (float)g_gl_viewport_x;
+        out->sy = (float)g_gl_viewport_h * 0.5f - eye[1] + (float)g_gl_viewport_y;
+    } else {
+        for (i = 0; i < 4; i++)
+            clip[i] = g_m_pj[0 * 4 + i] * eye[0] + g_m_pj[1 * 4 + i] * eye[1] +
+                      g_m_pj[2 * 4 + i] * eye[2] + g_m_pj[3 * 4 + i] * eye[3];
+        if (clip[3] <= 0.0001f && clip[3] >= -0.0001f)
+            return false;
+        {
+            float inv_w = 1.0f / clip[3];
+            float nx = clip[0] * inv_w, ny = clip[1] * inv_w;
+            out->sx = ((nx * 0.5f) + 0.5f) * (float)g_gl_viewport_w +
+                      (float)g_gl_viewport_x;
+            out->sy = ((-ny * 0.5f) + 0.5f) * (float)g_gl_viewport_h +
+                      (float)g_gl_viewport_y;
+        }
     }
     if (g_va_tex.on) {
         float u = fetch_comp(&g_va_tex, idx, 0);
@@ -996,7 +1020,10 @@ static bool transform_vertex(int idx, zgl_vtx_t *out)
     } else {
         out->u = out->v = 0.f;
     }
-    if (g_va_col.on) {
+    if (g_va_col.on && g_va_col.addr &&
+        (g_va_col.type == 0x1400u || g_va_col.type == 0x1401u ||
+         g_va_col.type == 0x1402u || g_va_col.type == 0x1406u ||
+         g_va_col.type == 0x140Cu)) {
         out->cr = fetch_comp(&g_va_col, idx, 0);
         out->cg = fetch_comp(&g_va_col, idx, 1);
         out->cb = fetch_comp(&g_va_col, idx, 2);
@@ -1217,29 +1244,57 @@ static void draw_prim(uint32_t mode, int count,
     int i;
     if (!g_va_pos.on || count < 3)
         return;
+    g_pixel_space_draw = false;
+    if (g_va_pos.type == 0x140Cu && g_m_pj[11] < -0.5f &&
+        g_m_pj[15] > -0.0001f && g_m_pj[15] < 0.0001f) {
+        int probes = count < 16 ? count : 16;
+        for (i = 0; i < probes; i++) {
+            int vi = index_of ? index_of(i, idx_addr, idx_type) : i;
+            float x = fetch_comp(&g_va_pos, vi, 0);
+            float y = fetch_comp(&g_va_pos, vi, 1);
+            float z = fetch_comp(&g_va_pos, vi, 2);
+            if (z > -0.0001f && z < 0.0001f &&
+                (x < -16.f || x > 16.f || y < -16.f || y > 16.f)) {
+                g_pixel_space_draw = true;
+                break;
+            }
+        }
+    }
     {
         static uint32_t draw_logs = 0;
-        if (draw_logs < 40) {
+        if (draw_logs < 40 || (index_of && draw_logs < 48)) {
             zgl_vtx_t probe;
             int vi0 = index_of ? index_of(0, idx_addr, idx_type) : 0;
             if (transform_vertex(vi0, &probe))
                 LOGD("draw: modo=0x%X n=%d v0=(%.1f,%.1f) uv=(%.2f,%.2f) "
-                     "tex=%u mv[12..14]=(%.1f %.1f %.1f) pj[0]=%.4f pj[5]=%.4f",
+                     "tex=%u mv[12..14]=(%.1f %.1f %.1f) pj[0]=%.4f pj[5]=%.4f "
+                     "pos=0x%08X typ=0x%X",
                      mode, count, probe.sx, probe.sy, probe.u, probe.v,
                      g_bound_tex, g_m_mv[12], g_m_mv[13], g_m_mv[14],
-                     g_m_pj[0], g_m_pj[5]);
+                     g_m_pj[0], g_m_pj[5], g_va_pos.addr, g_va_pos.type);
             else
-                LOGD("draw: modo=0x%X n=%d v0 DESCARTADO (w~0)", mode, count);
+                LOGD("draw: modo=0x%X n=%d v0 DESCARTADO (w~0) vi0=%d "
+                     "pos=0x%08X typ=0x%X",
+                     mode, count, vi0, g_va_pos.addr, g_va_pos.type);
             draw_logs++;
         }
     }
     for (i = 0; i < count; i++) {
         int vi = index_of ? index_of(i, idx_addr, idx_type) : i;
-        if (!transform_vertex(vi, &cur))
-            return;
+        if (!transform_vertex(vi, &cur)) {
+            static uint32_t skip_logs = 0;
+            if (skip_logs < 8)
+                LOGW("draw skip: i=%d vi=%d w~0 mode=0x%X n=%d", i, vi, mode, count);
+            skip_logs++;
+            have_first = have_prev = false;
+            if (mode == 0x0004u)
+                i = (i / 3) * 3 + 2; /* drop rest of this triangle */
+            continue;
+        }
         {
             static uint32_t vtx_dbg = 0;
-            if (vtx_dbg < 20) {
+            /* primeiros 20 + qualquer DrawElements (index_of != NULL) nos 12 primeiros */
+            if (vtx_dbg < 20 || (index_of && i < 12 && vtx_dbg < 60)) {
                 LOGI("v[%d]: screen=(%.1f,%.1f) uv=(%.2f,%.2f) vali=%d",
                      i, cur.sx, cur.sy, cur.u, cur.v, vi);
                 vtx_dbg++;
@@ -1269,16 +1324,29 @@ static void draw_prim(uint32_t mode, int count,
     }
     { /* probe pos-draw */
         static uint32_t pb_logs = 0;
-        if (pb_logs < 10 && count <= 4) {
+        if (pb_logs < 16 && (count <= 4 || (index_of && count >= 12))) {
             uint32_t *fbx = zfb_pixels();
-            LOGI("POST: fb[100+310*W]=0x%08X fb[200+80*W]=0x%08X "
-                 "fb[50]=0x%08X W=%d",
-                 fbx ? fbx[100 + 310 * ZFB_WIDTH] : 0,
-                 fbx ? fbx[200 + 80 * ZFB_WIDTH] : 0,
-                 fbx ? fbx[50] : 0, ZFB_WIDTH);
+            uint32_t i2, nonzero = 0, n = (uint32_t)ZFB_WIDTH * ZFB_HEIGHT;
+            if (fbx) {
+                for (i2 = 0; i2 < n; i2 += 64u) {
+                    uint32_t p = fbx[i2] & 0x00FFFFFFu;
+                    if (p != 0xFFFFFFu && p != 0u)
+                        nonzero++;
+                }
+            }
+            LOGI("POST: fb[320+240]=0x%08X fb[270+240]=0x%08X "
+                 "fb[555+385]=0x%08X fb[238+220]=0x%08X tex=%u blend=%d ca=%.2f "
+                 "n=%d nz64=%u",
+                 fbx ? fbx[320 + 240 * ZFB_WIDTH] : 0,
+                 fbx ? fbx[270 + 240 * ZFB_WIDTH] : 0,
+                 fbx ? fbx[555 + 385 * ZFB_WIDTH] : 0,
+                 fbx ? fbx[238 + 220 * ZFB_WIDTH] : 0,
+                 g_bound_tex, g_en_blend ? 1 : 0, g_cur_color[3],
+                 count, nonzero);
             pb_logs++;
         }
     }
+    g_pixel_space_draw = false;
 }
 
 static uint32_t decode_vertex_ptr(uint32_t raw_ptr) {
@@ -1405,6 +1473,12 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
     case GLFN_MatrixMode:
         /* 0x1700 MODELVIEW, 0x1701 PROJECTION, 0x1702 TEXTURE */
         g_mtx_mode = (a0 == 0x1701u) ? 1 : (a0 == 0x1702u) ? 2 : 0;
+        {
+            static uint32_t mm = 0;
+            if (mm < 16)
+                LOGI("glMatrixMode 0x%X -> %d", a0, g_mtx_mode);
+            mm++;
+        }
         break;
 
     case GLFN_LoadIdentity:
@@ -1412,13 +1486,38 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         break;
 
     case GLFN_LoadMatrixx:
-        if (a0) mtx_load_guest_fixed(cur_mtx(), a0);
+        if (a0) {
+            if (g_mtx_load_float)
+                mtx_load_guest_float(cur_mtx(), a0);
+            else
+                mtx_load_guest_fixed(cur_mtx(), a0);
+            g_mtx_load_float = 0;
+            {
+                static uint32_t lm = 0;
+                float *m = cur_mtx();
+                int interesting = (g_mtx_mode == 0) &&
+                    (m[0] < 0.99f || m[0] > 1.01f ||
+                     m[12] < -0.01f || m[12] > 0.01f ||
+                     m[13] < -0.01f || m[13] > 0.01f ||
+                     m[14] < -0.01f || m[14] > 0.01f);
+                if (lm < 12 || (interesting && lm < 40))
+                    LOGI("glLoadMatrixx modo=%d m0=%.4f m5=%.4f m10=%.4f "
+                         "m11=%.4f m12=%.3f m13=%.3f m14=%.3f m15=%.4f",
+                         g_mtx_mode, m[0], m[5], m[10], m[11],
+                         m[12], m[13], m[14], m[15]);
+                lm++;
+            }
+        }
         break;
 
     case GLFN_MultMatrixx:
         if (a0) {
             float m[16];
-            mtx_load_guest_fixed(m, a0);
+            if (g_mtx_load_float)
+                mtx_load_guest_float(m, a0);
+            else
+                mtx_load_guest_fixed(m, a0);
+            g_mtx_load_float = 0;
             mtx_mul(cur_mtx(), cur_mtx(), m);
         }
         break;
@@ -1474,6 +1573,17 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         float n = fx_to_f(zbrew_stack_arg(0));
         float f = fx_to_f(zbrew_stack_arg(1));
         float m[16];
+        {
+            static uint32_t fl = 0;
+            if (fl < 6) {
+                LOGI("glFrustumx(l=%.3f r=%.3f b=%.3f t=%.3f n=%.3f f=%.3f) modo=%d "
+                     "sp0=0x%08X sp1=0x%08X",
+                     l, r, b, t, n, f, g_mtx_mode,
+                     zmem_read32(g_cpu.r[REG_SP] + 0),
+                     zmem_read32(g_cpu.r[REG_SP] + 4));
+                fl++;
+            }
+        }
         if (r == l || t == b || f == n || n <= 0.f)
             break;
         memset(m, 0, sizeof(m));
@@ -1490,6 +1600,14 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
 
     case GLFN_Translatex: {
         float m[16];
+        {
+            static uint32_t tl = 0;
+            if (tl < 12) {
+                LOGI("glTranslatex(%.3f %.3f %.3f) modo=%d",
+                     fx_to_f(a0), fx_to_f(a1), fx_to_f(a2), g_mtx_mode);
+                tl++;
+            }
+        }
         mtx_identity(m);
         m[12] = fx_to_f(a0);
         m[13] = fx_to_f(a1);
@@ -1671,10 +1789,22 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
             break;
         for (i = 0; i < n; i++) {
             uint32_t id = zmem_read32(a1 + i * 4);
-            if (id < ZGL_MAX_TEXTURES && g_textures[id].pix) {
-                free(g_textures[id].pix);
-                g_textures[id].pix = NULL;
+            {
+                static uint32_t dl = 0;
+                if (dl < 16)
+                    LOGW("DeleteTextures[%u]: id=%u had_pix=%d %dx%d bound=%u",
+                         dl, id,
+                         (id < ZGL_MAX_TEXTURES && g_textures[id].pix) ? 1 : 0,
+                         (id < ZGL_MAX_TEXTURES) ? g_textures[id].w : 0,
+                         (id < ZGL_MAX_TEXTURES) ? g_textures[id].h : 0,
+                         g_bound_tex);
+                dl++;
             }
+            /* ponytail: alguns ports Qualcomm reutilizam o nome deletado antes
+             * do proximo upload; manter backing no soft driver ate overwrite/
+             * reset. Trocar por geracoes quando GenTextures modelar reuso. */
+            if (g_bound_tex == id)
+                g_bound_tex = 0;
         }
         break;
     }
@@ -1764,9 +1894,24 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         g_textures[g_bound_tex].h = h;
         {
             static uint32_t ok_logs = 0;
+            uint32_t *pix = g_textures[g_bound_tex].pix;
             if (ok_logs < 32)
                 LOGW("TexImage2D OK: tex=%u %dx%d pix=%p",
-                     g_bound_tex, w, h, (void *)g_textures[g_bound_tex].pix);
+                     g_bound_tex, w, h, (void *)pix);
+            if (pix && ok_logs < 12) {
+                uint32_t i, n = (uint32_t)w * (uint32_t)h;
+                uint32_t a0 = 0, a15 = 0, a255 = 0;
+                uint32_t raw0 = zmem_read16(pixels);
+                uint32_t raw1 = zmem_read16(pixels + 2);
+                for (i = 0; i < n; i++) {
+                    uint32_t a = pix[i] >> 24;
+                    if (a == 0) a0++;
+                    else if (a < 255) a15++;
+                    else a255++;
+                }
+                LOGW("Tex4444 hist tex=%u raw=%04X %04X px0=%08X a0=%u apart=%u a255=%u",
+                     g_bound_tex, raw0, raw1, pix[0], a0, a15, a255);
+            }
             ok_logs++;
         }
         break;
@@ -1882,18 +2027,60 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         /* (mode, count, type, indices) */
         int count = (int)a1;
         static uint32_t dec_calls = 0;
-        if ((dec_calls % 150) == 0) {
+        if (dec_calls < 8 || (dec_calls % 150) == 0) {
+            int esz = (g_va_pos.type == 0x1402u || g_va_pos.type == 0x1403u) ? 2 :
+                      (g_va_pos.type == 0x1400u || g_va_pos.type == 0x1401u) ? 1 : 4;
+            int stride = g_va_pos.stride ? g_va_pos.stride : g_va_pos.size * esz;
             LOGI("DrawElements[%u]: mode=0x%X count=%d type=0x%X idx=0x%08X "
-                 "va_pos.on=%d va_tex.on=%d va_col.on=%d blend=%d",
+                 "va_pos.on=%d size=%d typ=0x%X stride=%d addr=0x%08X "
+                 "va_tex.on=%d typ=0x%X addr=0x%08X "
+                 "va_col.on=%d typ=0x%X addr=0x%08X "
+                 "blend=%d tex=%u tex2d=%d has_pix=%d %dx%d",
                  dec_calls, a0, count, a2, a3,
-                 g_va_pos.on, g_va_tex.on, g_va_col.on, g_en_blend);
-            if (dec_calls == 0) {
+                 g_va_pos.on, g_va_pos.size, g_va_pos.type, g_va_pos.stride,
+                 g_va_pos.addr,
+                 g_va_tex.on, g_va_tex.type, g_va_tex.addr,
+                 g_va_col.on, g_va_col.type, g_va_col.addr,
+                 g_en_blend, g_bound_tex, g_en_tex2d ? 1 : 0,
+                 (g_bound_tex < ZGL_MAX_TEXTURES &&
+                  g_textures[g_bound_tex].pix) ? 1 : 0,
+                 (g_bound_tex < ZGL_MAX_TEXTURES) ? g_textures[g_bound_tex].w : 0,
+                 (g_bound_tex < ZGL_MAX_TEXTURES) ? g_textures[g_bound_tex].h : 0);
+            if (dec_calls < 4) {
                 uint32_t i;
-                for (i = 0; i < 12 && i < (uint32_t)count; i++) {
-                    uint16_t ix = (uint16_t)zmem_read16(a3 + i * 2);
-                    LOGI("DX idx[%u]=%u va3=0x%08X", i, ix,
-                         g_va_pos.addr + (uint32_t)ix * 8);
+                float in[4] = {0.f, 0.f, 0.f, 1.f};
+                float eye[4], clip[4];
+                int k;
+                for (i = 0; i < 4 && i < (uint32_t)count; i++) {
+                    int ix = elem_index((int)i, a3, a2);
+                    LOGI("DX idx[%u]=%d vaddr=0x%08X raw=%08X %08X %08X %08X",
+                         i, ix,
+                         g_va_pos.addr + (uint32_t)ix * (uint32_t)stride,
+                         zmem_read32(g_va_pos.addr + (uint32_t)ix * (uint32_t)stride),
+                         zmem_read32(g_va_pos.addr + (uint32_t)ix * (uint32_t)stride + 4),
+                         zmem_read32(g_va_pos.addr + (uint32_t)ix * (uint32_t)stride + 8),
+                         zmem_read32(g_va_pos.addr + (uint32_t)ix * (uint32_t)stride + 12));
                 }
+                for (k = 0; k < g_va_pos.size && k < 4; k++)
+                    in[k] = fetch_comp(&g_va_pos, elem_index(0, a3, a2), k);
+                for (k = 0; k < 4; k++)
+                    eye[k] = g_m_mv[0 * 4 + k] * in[0] + g_m_mv[1 * 4 + k] * in[1] +
+                             g_m_mv[2 * 4 + k] * in[2] + g_m_mv[3 * 4 + k] * in[3];
+                for (k = 0; k < 4; k++)
+                    clip[k] = g_m_pj[0 * 4 + k] * eye[0] + g_m_pj[1 * 4 + k] * eye[1] +
+                              g_m_pj[2 * 4 + k] * eye[2] + g_m_pj[3 * 4 + k] * eye[3];
+                LOGI("DX xform in=(%.3f %.3f %.3f %.3f) eye=(%.3f %.3f %.3f %.3f) "
+                     "clip=(%.3f %.3f %.3f %.3f) "
+                     "mv0=%.4f mv5=%.4f mv10=%.4f mv12=%.3f mv13=%.3f mv14=%.3f mv15=%.4f "
+                     "pj0=%.4f pj5=%.4f pj10=%.4f pj11=%.4f pj14=%.4f pj15=%.4f vp=%dx%d",
+                     in[0], in[1], in[2], in[3],
+                     eye[0], eye[1], eye[2], eye[3],
+                     clip[0], clip[1], clip[2], clip[3],
+                     g_m_mv[0], g_m_mv[5], g_m_mv[10], g_m_mv[12], g_m_mv[13],
+                     g_m_mv[14], g_m_mv[15],
+                     g_m_pj[0], g_m_pj[5], g_m_pj[10], g_m_pj[11],
+                     g_m_pj[14], g_m_pj[15],
+                     g_gl_viewport_w, g_gl_viewport_h);
             }
         }
         dec_calls++;
@@ -2144,9 +2331,22 @@ static uint32_t g_igles_object = 0;
 static void zgl_igles_map_init(void)
 {
     static const struct { uint16_t slot; uint16_t fn; } tab[] = {
-        /* 3-30 float (Brew3DCommon gles_name_for_index): Orthof=22.
-         * Mapeia pra variante x; dispatch converte IEEE float -> GLfixed. */
-        { 22, GLFN_Orthox },
+        /* 3-30 float (Brew3DCommon gles_name_for_index). Map to x/fixed
+         * twin; zgl_igles_dispatch_gl converte IEEE754 -> GLfixed. */
+        { 3,  GLFN_AlphaFuncx },         { 4,  GLFN_ClearColorx },
+        { 5,  GLFN_ClearDepthx },        { 6,  GLFN_Color4x },
+        { 7,  GLFN_DepthRangex },        { 8,  GLFN_Fogx },
+        { 9,  GLFN_Fogxv },              { 10, GLFN_Frustumx },
+        { 11, GLFN_LightModelx },        { 12, GLFN_LightModelxv },
+        { 13, GLFN_Lightx },             { 14, GLFN_Lightxv },
+        { 15, GLFN_LineWidthx },         { 16, GLFN_LoadMatrixx },
+        { 17, GLFN_Materialx },          { 18, GLFN_Materialxv },
+        { 19, GLFN_MultMatrixx },        { 20, GLFN_MultiTexCoord4x },
+        { 21, GLFN_Normal3x },           { 22, GLFN_Orthox },
+        { 23, GLFN_PointSizex },         { 24, GLFN_PolygonOffsetx },
+        { 25, GLFN_Rotatex },            { 26, GLFN_Scalex },
+        { 27, GLFN_TexEnvx },            { 28, GLFN_TexEnvxv },
+        { 29, GLFN_TexParameterx },      { 30, GLFN_Translatex },
         { 31, GLFN_ActiveTexture },      { 32, GLFN_AlphaFuncx },
         { 33, GLFN_BindTexture },        { 34, GLFN_BlendFunc },
         { 35, GLFN_Clear },              { 36, GLFN_ClearColorx },
@@ -2357,7 +2557,16 @@ void zgl_igles_handle(uint32_t slot)
 static const char *zgl_slot_name(int slot)
 {
     static const struct { uint16_t slot; const char *nm; } tab[] = {
-        { 22, "Orthof" },
+        { 3, "AlphaFunc" }, { 4, "ClearColor" }, { 5, "ClearDepthf" },
+        { 6, "Color4f" }, { 7, "DepthRangef" }, { 8, "Fogf" },
+        { 9, "Fogfv" }, { 10, "Frustumf" }, { 11, "LightModelf" },
+        { 12, "LightModelfv" }, { 13, "Lightf" }, { 14, "Lightfv" },
+        { 15, "LineWidth" }, { 16, "LoadMatrixf" }, { 17, "Materialf" },
+        { 18, "Materialfv" }, { 19, "MultMatrixf" },
+        { 20, "MultiTexCoord4f" }, { 21, "Normal3f" }, { 22, "Orthof" },
+        { 23, "PointSize" }, { 24, "PolygonOffset" }, { 25, "Rotatef" },
+        { 26, "Scalef" }, { 27, "TexEnvf" }, { 28, "TexEnvfv" },
+        { 29, "TexParameterf" }, { 30, "Translatef" },
         { 31, "ActiveTexture" }, { 32, "AlphaFuncx" }, { 33, "BindTexture" },
         { 34, "BlendFunc" }, { 35, "Clear" }, { 36, "ClearColorx" },
         { 37, "ClearDepthx" }, { 38, "ClearStencil" },
@@ -2423,24 +2632,36 @@ static uint32_t fbits_to_fixed(uint32_t bits)
 static void zgl_igles_dispatch_gl(uint32_t slot, int16_t fn, uint32_t sp0)
 {
     uint32_t a0 = g_cpu.r[1], a1 = g_cpu.r[2], a2 = g_cpu.r[3], a3 = sp0;
-    /* Slots float 3..30: args sao IEEE754; Orthox/Frustumx esperam GLfixed. */
+    /* Slots float 3..30: args sao IEEE754; Orthox/Frustumx/Translatex
+     * esperam GLfixed. LoadMatrixf/MultMatrixf passam PONTEIRO — nao
+     * converter; marcar g_mtx_load_float pra ler IEEE na matriz. */
+    g_mtx_load_float = 0;
     if (slot >= 3 && slot <= 30) {
-        a0 = fbits_to_fixed(a0);
-        a1 = fbits_to_fixed(a1);
-        a2 = fbits_to_fixed(a2);
-        a3 = fbits_to_fixed(a3);
-        /* Orthof/Frustumf: near/far tambem float na pilha (sp1/sp2 com shift) */
-        if (fn == GLFN_Orthox || fn == GLFN_Frustumx) {
-            uint32_t n = fbits_to_fixed(zmem_read32(g_cpu.r[REG_SP] + 4));
-            uint32_t f = fbits_to_fixed(zmem_read32(g_cpu.r[REG_SP] + 8));
-            /* Reescreve sp slots 1/2 temporariamente via stack_arg path:
-             * com shift ligado, stack_arg(0/1) leem SP+4 / SP+8. */
-            zmem_write32(g_cpu.r[REG_SP] + 4, n);
-            zmem_write32(g_cpu.r[REG_SP] + 8, f);
+        if (fn == GLFN_LoadMatrixx || fn == GLFN_MultMatrixx) {
+            g_mtx_load_float = 1;
+            /* a0 = ptr; Fogxv/Light*v tambem passam ptr — leave raw */
+        } else if (fn == GLFN_Fogxv || fn == GLFN_LightModelxv ||
+                   fn == GLFN_Lightxv || fn == GLFN_Materialxv ||
+                   fn == GLFN_TexEnvxv) {
+            a0 = a0; /* pname stays enum int */
+            /* a1 = pointer — leave raw */
+        } else {
+            a0 = fbits_to_fixed(a0);
+            a1 = fbits_to_fixed(a1);
+            a2 = fbits_to_fixed(a2);
+            a3 = fbits_to_fixed(a3);
+            /* Orthof/Frustumf: near/far tambem float na pilha */
+            if (fn == GLFN_Orthox || fn == GLFN_Frustumx) {
+                uint32_t n = fbits_to_fixed(zmem_read32(g_cpu.r[REG_SP] + 4));
+                uint32_t f = fbits_to_fixed(zmem_read32(g_cpu.r[REG_SP] + 8));
+                zmem_write32(g_cpu.r[REG_SP] + 4, n);
+                zmem_write32(g_cpu.r[REG_SP] + 8, f);
+            }
         }
     }
     zbrew_stack_arg_shift(true);
     zgl_dispatch((uint32_t)fn, a0, a1, a2, a3);
     zbrew_stack_arg_shift(false);
+    g_mtx_load_float = 0;
 }
 
