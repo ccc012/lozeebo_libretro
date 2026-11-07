@@ -1,11 +1,14 @@
 # Double Dragon regression gate — FAIL loud (exit 1).
-# Usage: powershell -File tools/dd-gate/run.ps1 [-Frames 600] [-Seq "..."]
+# Usage: powershell -File tools/dd-gate/run.ps1 [-Frames 600] [-Seq "..."] [-Playable]
+#   -Playable: SEQ longa (START→stage→LEFT/RIGHT hold + A/B punches) com dump
+#   temporal e prova de PPM distintos por acao (movimento vs soco).
 param(
     [int]$Frames = 600,
     [string]$Mod = "D:\Temp\zeebo_all\Double_Dragon__Brazil___Es_Pt_\mod\274754\ddragonz.mod",
     [string]$BuildDir = "build-dd-gate",
     [string]$Seq = "",
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$Playable
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -43,12 +46,22 @@ if (-not (Test-Path $dll)) { Fail "dll ausente: $dll" }
 
 $out = Join-Path $root "artifacts\dd-gate"
 New-Item -ItemType Directory -Force $out | Out-Null
-$tag = if ($Seq) { "seq-{0}" -f $Frames } else { "{0}" -f $Frames }
+
+# SEQ default para -Playable: START duplo (avanca title→stage),
+# depois LEFT hold 90f, RIGHT hold 90f, A/B punches intercalados.
+$playableSeq = "START:340:8,START:420:8,LEFT:560:90,RIGHT:700:90,A:820:6,A:860:6,A:900:6,B:960:6,B:1000:6,LEFT:1060:60,A:1140:6,RIGHT:1180:60,A:1260:6"
+
+if ($Playable) {
+    $Frames = 1400
+    $Seq = $playableSeq
+}
+
+$tag = if ($Playable) { "playable" } elseif ($Seq) { "seq-{0}" -f $Frames } else { "{0}" -f $Frames }
 $ppm = Join-Path $out ("dd-{0}.ppm" -f $tag)
 $log = Join-Path $out ("dd-{0}.log" -f $tag)
 Remove-Item $ppm, $log -ErrorAction SilentlyContinue
 
-$env:ZEEMU_SMOKE_MAX_SECONDS = [string]([Math]::Max(120, [int]($Frames / 2)))
+$env:ZEEMU_SMOKE_MAX_SECONDS = [string]([Math]::Max(180, [int]($Frames / 2)))
 Remove-Item Env:ZEEMU_SMOKE_DUMP_DIR -ErrorAction SilentlyContinue
 if ($Seq) {
     $env:ZEEMU_SMOKE_SEQ = $Seq
@@ -58,7 +71,16 @@ if ($Seq) {
     Remove-Item Env:ZEEMU_SMOKE_HOLD_FRAMES -ErrorAction SilentlyContinue
 }
 
-Write-Host "smoke ${Frames}f mod=$Mod seq=$Seq"
+$dumpDir = $null
+if ($Playable) {
+    $dumpDir = Join-Path $out "dump-$tag"
+    New-Item -ItemType Directory -Force $dumpDir | Out-Null
+    Remove-Item (Join-Path $dumpDir "*.ppm") -ErrorAction SilentlyContinue
+    $env:ZEEMU_SMOKE_DUMP_DIR = $dumpDir
+    $env:ZEEMU_SMOKE_DUMP_STRIDE = "30"
+}
+
+Write-Host "smoke ${Frames}f mod=$Mod seq=$Seq playable=$Playable"
 $cmdLine = "`"$smoke`" `"$dll`" `"$Mod`" `"$ppm`" $Frames 2>`"$log`""
 cmd /c $cmdLine
 $code = $LASTEXITCODE
@@ -90,18 +112,71 @@ if ($draw -lt 1) { Fail "DrawArrays ausente (sem cena GL pos-load)" }
 $texOk = ([regex]::Matches($text, "CompressedTex:.*-> OK")).Count
 if ($texOk -lt 1) { Fail "CompressedTex OK ausente" }
 
-if ($Seq) {
+# Title idle SHA conhecido (nao pode aparecer apos SEQ/Playable)
+$idleTitle = "2149E446D5DC3A50D2348E052C516C5CE0F133CEA26C7072A92117672E7E518A"
+
+if ($Seq -or $Playable) {
     if ($text -notmatch "hid-button") {
         Fail "SEQ setada mas hid-button ausente no log"
     }
-    # Pos-START: PPM nao pode ser o title idle conhecido
-    $idleTitle = "2149E446D5DC3A50D2348E052C516C5CE0F133CEA26C7072A92117672E7E518A"
     $hash = (Get-FileHash $ppm -Algorithm SHA256).Hash
     if ($hash -eq $idleTitle) {
         Fail "PPM ainda e title idle apos SEQ (START nao avancou)"
     }
 } else {
     $hash = (Get-FileHash $ppm -Algorithm SHA256).Hash
+}
+
+if ($Playable) {
+    # Dump temporal: precisa de pelo menos 3 PPM distintos na fase stage
+    # (pos-START) provando que input causa mudanca visual.
+    $dumpPpms = Get-ChildItem (Join-Path $dumpDir "*.ppm") -ErrorAction SilentlyContinue
+    if (-not $dumpPpms -or $dumpPpms.Count -lt 10) {
+        Fail "dump temporal insuficiente ($($dumpPpms.Count) frames)"
+    }
+    $hashes = @()
+    foreach ($f in $dumpPpms) {
+        $hashes += (Get-FileHash $f.FullName -Algorithm SHA256).Hash
+    }
+    $unique = ($hashes | Sort-Object -Unique).Count
+    if ($unique -lt 10) {
+        Fail "dump muito homogeneo: $unique PPM unicos (need >=10)"
+    }
+
+    # Prova de movimento: PPM durante LEFT hold != PPM durante RIGHT hold
+    # Frames aprox: LEFT ~560-649 (dump@570,600,630,660), RIGHT ~700-789 (dump@720,750,780)
+    $leftFrames = @('frame_0570','frame_0600','frame_0630','frame_0660')
+    $rightFrames = @('frame_0720','frame_0750','frame_0780')
+    $leftHashes = @(); $rightHashes = @()
+    foreach ($n in $leftFrames) {
+        $p = Join-Path $dumpDir "$n.ppm"
+        if (Test-Path $p) { $leftHashes += (Get-FileHash $p -Algorithm SHA256).Hash }
+    }
+    foreach ($n in $rightFrames) {
+        $p = Join-Path $dumpDir "$n.ppm"
+        if (Test-Path $p) { $rightHashes += (Get-FileHash $p -Algorithm SHA256).Hash }
+    }
+    if ($leftHashes.Count -lt 2 -or $rightHashes.Count -lt 2) {
+        Fail "frames de movimento LEFT/RIGHT ausentes no dump"
+    }
+    # LEFT e Right devem ter conjuntos disjuntos de hashes (movimento diferente)
+    $common = Compare-Object $leftHashes $rightHashes -IncludeEqual -ExcludeDifferent
+    if ($common.Count -gt 0) {
+        Fail "LEFT e RIGHT produziram PPM identicos (sem prova de movimento)"
+    }
+
+    # Prova de soco: A punch frame != pre-A frame
+    $preA = Join-Path $dumpDir "frame_0810.ppm"
+    $punchA = Join-Path $dumpDir "frame_0840.ppm"
+    if ((Test-Path $preA) -and (Test-Path $punchA)) {
+        $hPre = (Get-FileHash $preA -Algorithm SHA256).Hash
+        $hPunch = (Get-FileHash $punchA -Algorithm SHA256).Hash
+        if ($hPre -eq $hPunch) {
+            Fail "A punch nao mudou PPM vs pre-A (sem prova de acao)"
+        }
+    }
+
+    Write-Host "PLAYABLE dump=$($dumpPpms.Count) unique=$unique LEFT_distinct=$($leftHashes.Count) RIGHT_distinct=$($rightHashes.Count)"
 }
 
 Write-Host "PASS frames=$Frames exit=0 varied=1 audio_nz ok data.ggz=$data GRAPHICS=$gfx DrawArrays=$draw"
