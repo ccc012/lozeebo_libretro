@@ -15,6 +15,7 @@
 #include "libretro.h"
 
 #include "../debug/log.h"
+#include "../debug/perf.h"
 #include "../memory/memory.h"
 #include "../cpu/cpu.h"
 #include "../gpu/framebuffer.h"
@@ -537,7 +538,11 @@ void retro_run(void) {
                 in_thr = zboot_in_thread_guest();
                 if (in_thr && slice > ZBOOT_THREAD_SLICE_INSTR)
                     slice = ZBOOT_THREAD_SLICE_INSTR;
-                zcpu_run(slice);
+                {
+                    uint64_t perf_start = zperf_begin();
+                    zcpu_run(slice);
+                    zperf_end(ZPERF_CPU_GUEST, perf_start, slice);
+                }
                 used += slice;
                 zboot_thread_slice_yield_if_needed();
                 if (in_thr && zboot_state() == ZBOOT_RUNNING)
