@@ -43,6 +43,7 @@ set(ZEEBO_CORE_SOURCES
     src/gpu/egl_gl.c
     src/gpu/framebuffer.c
     src/input/input.c
+    src/loader/content_package.c
     src/loader/bar_parser.c
     src/loader/mif_parser.c
     src/loader/mod_loader.c
@@ -88,6 +89,7 @@ else()
 endif()
 
 if(WIN32)
+    target_link_libraries(zeebo_libretro PRIVATE bcrypt)
     set_target_properties(zeebo_libretro PROPERTIES SUFFIX ".dll")
 elseif(APPLE)
     set_target_properties(zeebo_libretro PROPERTIES SUFFIX ".dylib")
@@ -124,6 +126,11 @@ else()
 endif()
 
 if(ZEEBO_BUILD_SMOKE_TEST AND NOT ZEEBO_PLATFORM_CONSOLE)
+    add_executable(content_package_check tests/content_package_check.c src/loader/content_package.c)
+    target_include_directories(content_package_check PRIVATE src)
+    if(WIN32)
+        target_link_libraries(content_package_check PRIVATE bcrypt)
+    endif()
     add_executable(audio_adpcm_rate tests/audio_adpcm_rate.c
         src/audio/audio.c src/audio/mixer.c src/audio/pcm.c src/audio/adpcm.c)
     add_executable(libretro_smoke tests/libretro_smoke.c)

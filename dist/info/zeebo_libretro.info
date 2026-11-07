@@ -1,6 +1,7 @@
 display_name = "Zeebo"
 authors = "Lucas"
-supported_extensions = "mod|mif|zip"
+supported_extensions = "mod|mif|bar|ggz|zip|7z"
+block_extract = "true"
 corename = "Zeebo"
 systemname = "Zeebo"
 database = "Zeebo"
