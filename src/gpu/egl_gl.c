@@ -1692,7 +1692,10 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
     case GLFN_Enable:
     case GLFN_Disable: {
         bool on = (fn == GLFN_Enable);
-        if (a0 == 0x0DE1u) g_en_tex2d = on;       /* GL_TEXTURE_2D */
+        if (a0 == 0x0DE1u) {
+            g_en_tex2d_units[g_active_tex] = on;
+            if (g_active_tex == 0) g_en_tex2d = on; // keep legacy flag for boot code
+        }
         else if (a0 == 0x0BE2u) g_en_blend = on;  /* GL_BLEND */
         else if (a0 == 0x0BC0u) g_en_alpha = on;  /* GL_ALPHA_TEST */
         else if (a0 == 0x0B44u) g_en_cull = on;   /* GL_CULL_FACE */
