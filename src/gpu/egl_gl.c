@@ -1197,8 +1197,8 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
             if (sb > 255) sb = 255;
             if (g_en_blend) {
                 uint64_t blend_start = zperf_begin();
-                if (sa == 0 && (g_blend_src == 0x0303 || g_blend_src == 0x0301))
-                    sa = 255; /* alpha 0 como opaco quando src=ONE_MINUS_* */
+                if (sa == 0 && (g_blend_src == 0x0303 || g_blend_src == 0x0301 || g_blend_src == 0x0302u))
+                    sa = 255; /* alpha 0 as opaque for any blend src */
                 dst = fb[y * ZFB_WIDTH + x];
                 uint8_t dr = (dst >> 16) & 0xFF, dg = (dst >> 8) & 0xFF, db = dst & 0xFF;
                 /* Calcula fator src (0..255) baseado em g_blend_src */
