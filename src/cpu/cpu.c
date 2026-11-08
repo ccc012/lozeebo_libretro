@@ -1033,6 +1033,11 @@ zcpu_step_hot:
 #endif
 static int try_hle_empty_count(uint32_t instr) {
     uint32_t pc, w0, w1, w2, a, b, n;
+    /* Reject before lookahead: this probe runs for every ARM instruction. */
+    if (instr != 0xE1530002u && instr != 0xE1500005u &&
+        instr != 0x82822001u && instr != 0xB2800001u &&
+        instr != 0x8AFFFFFCu && instr != 0xBAFFFFFCu)
+        return 0;
     pc = g_cpu.r[REG_PC] & ~3u;
     w0 = instr;
     w1 = zmem_read32(pc + 4u);
@@ -1110,6 +1115,8 @@ static int try_hle_word_fill(uint32_t instr) {
     int32_t off;
     uint32_t imm8, rot;
 
+    if (instr != 0xE5942004u && instr != 0xE7821100u)
+        return 0;
     pc = g_cpu.r[REG_PC] & ~3u;
     w0 = instr;
     /* Mid-loop: PC no STR — recua 4. */
