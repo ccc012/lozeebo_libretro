@@ -76,6 +76,7 @@ def main():
     for name in ('check-content-packages', 'check-content-frontend'):
         check(name, [sys.executable, ROOT / 'tests' / (name + '.py')], 480)
     check('capability-comparator', [sys.executable, ROOT / 'tools/capability-gate/test_comparator.py'])
+    check('gles-composition', [release / 'gles_composition.exe'])
     for name in ('audio_adpcm_rate', 'content_run7_check'):
         check(name, [release / (name + '.exe')])
     for case in ('buttons', 'position', 'busy', 'abi', 'busy-position'):

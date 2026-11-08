@@ -1093,16 +1093,25 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
 
     if (!fb)
         return;
-    /* Alpha do vertice so torna o fragmento inerte quando o estado GL o usa.
-     * Sem blend/alpha-test, RGB ainda deve ser escrito mesmo com alpha zero. */
-    if (v0->ca <= 0.f && v1->ca <= 0.f && v2->ca <= 0.f &&
-        (g_en_alpha || (g_en_blend && g_blend_src == 0x0302u)))
-        return;
     /* Zuma: Enable(TEXTURE_2D) pode nao sobreviver; se texcoord client
-     * state ligado, amostrar a textura bound. */
+     * state ligado, amostrar a textura bound. Resolver antes do descarte:
+     * GL_REPLACE/GL_ADD podem gerar alpha final nao-zero mesmo com alpha
+     * de vertice zero. */
     if ((g_en_tex2d || g_va_tex.on) && g_bound_tex < ZGL_MAX_TEXTURES &&
         g_textures[g_bound_tex].pix)
         tex = &g_textures[g_bound_tex];
+    /* Alpha do vertice so torna o fragmento inerte quando o estado GL o usa.
+     * Sem blend/alpha-test, RGB ainda deve ser escrito mesmo com alpha zero.
+     * MODULATE/DECAL/sem textura: alpha final = alpha do vertice (ou produto),
+     * entao zero continua zero. REPLACE/ADD: o alpha vem da textura. */
+    if (v0->ca <= 0.f && v1->ca <= 0.f && v2->ca <= 0.f &&
+        (g_en_alpha || (g_en_blend && g_blend_src == 0x0302u))) {
+        bool alpha_from_texture = tex &&
+            (g_tex_env_mode == 0x1E01u /* GL_REPLACE */ ||
+             g_tex_env_mode == 0x0104u /* GL_ADD */);
+        if (!alpha_from_texture)
+            return;
+    }
 
     area = (v1->sx - v0->sx) * (v2->sy - v0->sy) -
            (v1->sy - v0->sy) * (v2->sx - v0->sx);
@@ -1192,13 +1201,12 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
                     cr = tr;
                     cg = tg;
                     cb = tb;
-                    if (tex->has_alpha)
-                        ca = ta;
+                    ca = tex->has_alpha ? ta : 1.f;
                 } else if (g_tex_env_mode == 0x0104u) { /* GL_ADD */
                     cr = (cr + tr > 1.f) ? 1.f : (cr + tr);
                     cg = (cg + tg > 1.f) ? 1.f : (cg + tg);
                     cb = (cb + tb > 1.f) ? 1.f : (cb + tb);
-                    ca *= ta;
+                    ca = (ca + ta > 1.f) ? 1.f : (ca + ta);
                 } else if (g_tex_env_mode == 0x2101u) { /* GL_DECAL */
                     cr = cr * (1.f - ta) + tr * ta;
                     cg = cg * (1.f - ta) + tg * ta;

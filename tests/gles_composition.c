@@ -49,6 +49,22 @@ int main(void) {
     gl_call(T_Clear,0x4000,0,0,0);
     gl_call(T_DrawArrays,6,0,4,0);
     expect(0x40208f,"MODULATE preserves half-alpha transparency");
+
+    /* REPLACE: alpha final vem da textura; alpha de vertice zero nao pode
+     * descartar o triangulo. Antes da correcao o discard global zerava a tela. */
+    {
+        uint32_t colors = zheap_alloc(4 * 4);
+        for (i = 0; i < 4; i++) zmem_write32(colors + (uint32_t)i * 4, 0);
+        gl_call(T_ColorPointer,4,0x140c,0,colors);
+        gl_call(T_EnableClientState,0x8076,0,0,0); /* GL_COLOR_ARRAY */
+        gl_call(T_Enable,0x0be2,0,0,0);            /* GL_BLEND */
+        gl_call(T_BlendFunc,0x302,0x303,0,0);      /* SRC_ALPHA/1-SRC_ALPHA */
+        gl_call(T_TexEnvx,0x2300,0x2200,0x1e01,0); /* GL_REPLACE */
+        gl_call(T_ClearColorx,0,0,0,FX(1));
+        gl_call(T_Clear,0x4000,0,0,0);
+        gl_call(T_DrawArrays,6,0,4,0);
+        expect(0x804020,"REPLACE keeps triangle with zero vertex alpha");
+    }
     puts("GLES composition: OK");
     return 0;
 }
