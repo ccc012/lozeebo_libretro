@@ -420,7 +420,7 @@
                           "frames":  180,
                           "audio_nonzero":  0,
                           "screen":  "nonuniform",
-                          "ppm_sha256":  "4c270029815b465b5dca3271c3db42a682bc190b797692e978b26b1d33d2676b",
+                          "ppm_sha256":  "a13721f3acd2f805a5e2486fa2cf26b76450fbd7240bd70d8980f31abc73be77",
                           "errors":  [
 
                                      ],
@@ -437,7 +437,7 @@
                           "validation":  [
                                              {
                                                  "report":  "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010526Z-c53eb319\\report.json",
-                                                 "ppm_sha256":  "4c270029815b465b5dca3271c3db42a682bc190b797692e978b26b1d33d2676b",
+                                                 "ppm_sha256":  "a13721f3acd2f805a5e2486fa2cf26b76450fbd7240bd70d8980f31abc73be77",
                                                  "frames":  180,
                                                  "audio_nonzero":  0,
                                                  "exit_code":  0,
@@ -445,7 +445,7 @@
                                              },
                                              {
                                                  "report":  "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010625Z-8d0bd289\\report.json",
-                                                 "ppm_sha256":  "4c270029815b465b5dca3271c3db42a682bc190b797692e978b26b1d33d2676b",
+                                                 "ppm_sha256":  "a13721f3acd2f805a5e2486fa2cf26b76450fbd7240bd70d8980f31abc73be77",
                                                  "frames":  180,
                                                  "audio_nonzero":  0,
                                                  "exit_code":  0,
@@ -492,3 +492,4 @@
                       }
                   ]
 }
+
