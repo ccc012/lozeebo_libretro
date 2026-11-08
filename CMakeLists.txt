@@ -146,6 +146,11 @@ if(ZEEBO_BUILD_SMOKE_TEST AND NOT ZEEBO_PLATFORM_CONSOLE)
     if(MSVC)
         target_compile_definitions(input_transitions PRIVATE _CRT_SECURE_NO_WARNINGS)
     endif()
+    add_executable(gles_composition tests/gles_composition.c
+        src/cpu/cpu.c src/cpu/decode.c src/cpu/execute_arm.c src/cpu/execute_thumb.c src/cpu/flags.c
+        src/memory/memory.c src/memory/heap.c src/gpu/framebuffer.c src/gpu/egl_gl.c
+        src/debug/log.c src/debug/trace.c src/debug/perf.c src/audio/miniz_tinfl.c)
+    target_include_directories(gles_composition PRIVATE src src/core)
     add_executable(libretro_smoke tests/libretro_smoke.c)
     set_target_properties(libretro_smoke PROPERTIES
         C_STANDARD 99

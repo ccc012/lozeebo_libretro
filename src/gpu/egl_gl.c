@@ -450,6 +450,7 @@ void zegl_autopresent(void)
 typedef struct {
     uint32_t *pix; /* host, ARGB8888 */
     int w, h;
+    bool has_alpha;
 } zgl_texture_t;
 
 typedef struct {
@@ -478,6 +479,7 @@ static uint32_t g_gl_scissor_w = ZFB_WIDTH, g_gl_scissor_h = ZFB_HEIGHT;
 static uint32_t g_blend_src = 0x0302; /* GL_SRC_ALPHA */
 static uint32_t g_blend_dst = 0x0303; /* GL_ONE_MINUS_SRC_ALPHA */
 static uint32_t g_blend_eq  = 0x8006; /* GL_FUNC_ADD */
+static uint32_t g_tex_env_mode = 0x2100; /* GL_MODULATE */
 
 static float *cur_mtx(void)
 {
@@ -553,6 +555,7 @@ static void zgl_reset_raster(void)
     g_gl_scissor_x = g_gl_scissor_y = 0;
     g_gl_scissor_w = ZFB_WIDTH;
     g_gl_scissor_h = ZFB_HEIGHT;
+    g_tex_env_mode = 0x2100; /* GL_MODULATE */
 }
 
 /* Converte um upload de textura guest para ARGB8888 host.
@@ -1181,10 +1184,31 @@ static void raster_triangle(const zgl_vtx_t *v0, const zgl_vtx_t *v1,
                         sx_logs++;
                     }
                 }
-                cr *= (float)((t >> 16) & 0xFF) / 255.f;
-                cg *= (float)((t >> 8) & 0xFF) / 255.f;
-                cb *= (float)(t & 0xFF) / 255.f;
-                ca *= (float)(t >> 24) / 255.f;
+                float tr = (float)((t >> 16) & 0xFF) / 255.f;
+                float tg = (float)((t >> 8) & 0xFF) / 255.f;
+                float tb = (float)(t & 0xFF) / 255.f;
+                float ta = (float)(t >> 24) / 255.f;
+                if (g_tex_env_mode == 0x1E01u) { /* GL_REPLACE */
+                    cr = tr;
+                    cg = tg;
+                    cb = tb;
+                    if (tex->has_alpha)
+                        ca = ta;
+                } else if (g_tex_env_mode == 0x0104u) { /* GL_ADD */
+                    cr = (cr + tr > 1.f) ? 1.f : (cr + tr);
+                    cg = (cg + tg > 1.f) ? 1.f : (cg + tg);
+                    cb = (cb + tb > 1.f) ? 1.f : (cb + tb);
+                    ca *= ta;
+                } else if (g_tex_env_mode == 0x2101u) { /* GL_DECAL */
+                    cr = cr * (1.f - ta) + tr * ta;
+                    cg = cg * (1.f - ta) + tg * ta;
+                    cb = cb * (1.f - ta) + tb * ta;
+                } else { /* GL_MODULATE (0x2100) */
+                    cr *= tr;
+                    cg *= tg;
+                    cb *= tb;
+                    ca *= ta;
+                }
             }
             sa = (uint32_t)(ca * 255.f + 0.5f);
             if (sa > 255) sa = 255;
@@ -1853,6 +1877,7 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
             decode_compressed_texture(pixels, w, h, a2, image_size);
         g_textures[g_bound_tex].w = w;
         g_textures[g_bound_tex].h = h;
+        g_textures[g_bound_tex].has_alpha = (a2 == 0x8C93u || a2 == 0x87EEu);
         break;
     }
 
@@ -1923,6 +1948,9 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         g_textures[g_bound_tex].pix = convert_teximage(pixels, w, h, fmt, type);
         g_textures[g_bound_tex].w = w;
         g_textures[g_bound_tex].h = h;
+        g_textures[g_bound_tex].has_alpha =
+            (fmt == 0x1908u || type == 0x8033u || type == 0x8034u ||
+             fmt == 0x190Au || fmt == 0x1906u);
         {
             static uint32_t ok_logs = 0;
             uint32_t *pix = g_textures[g_bound_tex].pix;
@@ -1956,7 +1984,19 @@ static void zgl_dispatch(uint32_t fn, uint32_t a0, uint32_t a1,
         break;
 
     case GLFN_TexEnvx:
+        if (a0 == 0x2300u && a1 == 0x2200u) { /* GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE */
+            uint32_t mode = (a2 >= 0x10000 && (a2 & 0xFFFF) == 0) ? (a2 >> 16) : a2;
+            g_tex_env_mode = mode;
+        }
+        break;
+
     case GLFN_TexEnvxv:
+        if (a0 == 0x2300u && a1 == 0x2200u && a2) {
+            uint32_t v = zmem_read32(a2);
+            uint32_t mode = (v >= 0x10000 && (v & 0xFFFF) == 0) ? (v >> 16) : v;
+            g_tex_env_mode = mode;
+        }
+        break;
     case GLFN_PixelStorei:
     case GLFN_Hint:
     case GLFN_ShadeModel:
@@ -2675,6 +2715,11 @@ static void zgl_igles_dispatch_gl(uint32_t slot, int16_t fn, uint32_t sp0)
                    fn == GLFN_TexEnvxv) {
             a0 = a0; /* pname stays enum int */
             /* a1 = pointer — leave raw */
+        } else if (fn == GLFN_TexEnvx) {
+            float f;
+            memcpy(&f, &a2, 4);
+            if (f == 0x1E01 || f == 0x2100 || f == 0x2101 || f == 0x0104 || f == 0x0BE2)
+                a2 = (uint32_t)f;
         } else {
             a0 = fbits_to_fixed(a0);
             a1 = fbits_to_fixed(a1);
