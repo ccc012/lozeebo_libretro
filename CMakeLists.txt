@@ -146,6 +146,11 @@ if(ZEEBO_BUILD_SMOKE_TEST AND NOT ZEEBO_PLATFORM_CONSOLE)
     if(MSVC)
         target_compile_definitions(input_transitions PRIVATE _CRT_SECURE_NO_WARNINGS)
     endif()
+    add_executable(offscreen_draw tests/offscreen_draw.c ${INPUT_TEST_SOURCES})
+    target_include_directories(offscreen_draw PRIVATE src src/core)
+    if(WIN32)
+        target_link_libraries(offscreen_draw PRIVATE bcrypt)
+    endif()
     add_executable(libretro_smoke tests/libretro_smoke.c)
     set_target_properties(libretro_smoke PROPERTIES
         C_STANDARD 99

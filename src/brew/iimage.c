@@ -325,7 +325,12 @@ static void zimage_blit_to_device(zimage_t *img, int dst_x, int dst_y, int frame
                 uint8_t bb = (uint8_t)((b * a + db * (255 - a)) / 255);
                 fb[dy * fb_w + dx] = (br << 24) | (bg << 16) | (bb << 8) | 0xFFu;
             } else {
-                fb[dy * fb_w + dx] = (r << 24) | (g << 16) | (b << 8) | 0xFFu;
+                if (dest_use_zfb()) {
+            fb[dy * fb_w + dx] = (r << 24) | (g << 16) | (b << 8) | 0xFFu;
+        } else {
+            uint32_t color = (r << 24) | (g << 16) | (b << 8) | 0xFFu;
+            dest_put_xrgb(dx, dy, color);
+        }
             }
         }
     }
