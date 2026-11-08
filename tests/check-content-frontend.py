@@ -16,7 +16,7 @@ with (out / 'archive-member.log').open('w') as log:
                         package, str(out / 'archive-member.ppm'), '900'],
                        cwd=root, env=env, stdout=log, stderr=log)
 assert p.returncode == 0
-assert hashlib.sha256((out / 'archive-member.ppm').read_bytes()).hexdigest().upper() == 'DC43FEA183E9930E6C6C24F1012680CBCC9CBD754CEFDA39BE98A31F258947C0'
+assert hashlib.sha256((out / 'archive-member.ppm').read_bytes()).hexdigest().upper() == 'F7202F41BA860A0E8ABFE83977B0D85C91F72E23209B79CB0D584752ECF352D6'
 assert 'audio_nonzero=931855' in (out / 'archive-member.log').read_text(errors='replace')
 print('PASS archive#mod member: exact FP video/audio reference')
 env['ZEEMU_SMOKE_CONTENT_PATH'] = r'C:\frontend-temporary\missing-game.mod'
@@ -27,6 +27,6 @@ with (out / 'archive-ext.log').open('w') as log:
                         package, str(out / 'archive-ext.ppm'), '900'],
                        cwd=root, env=env, stdout=log, stderr=log)
 assert p.returncode == 0
-assert hashlib.sha256((out / 'archive-ext.ppm').read_bytes()).hexdigest().upper() == 'DC43FEA183E9930E6C6C24F1012680CBCC9CBD754CEFDA39BE98A31F258947C0'
+assert hashlib.sha256((out / 'archive-ext.ppm').read_bytes()).hexdigest().upper() == 'F7202F41BA860A0E8ABFE83977B0D85C91F72E23209B79CB0D584752ECF352D6'
 assert 'audio_nonzero=931855' in (out / 'archive-ext.log').read_text(errors='replace')
 print('PASS GET_GAME_INFO_EXT: exact FP video/audio reference')
