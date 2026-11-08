@@ -1,0 +1,468 @@
+{
+  "schema": 1,
+  "provenance": {
+    "source_commit": "bbc756c98bbc930b2d776257a030d3225127b378",
+    "dll_sha256": "77375a354b52b3093398c7bae6fc24ad48f56a4c4d7edc94fd4c2fdd0628d856",
+    "smoke_sha256": "f38687246391de5de44ee3f98b94bc54ce5e24864e78560fe59546593548206f",
+    "source": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all",
+    "contact_sheet": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\contact-sheet.png",
+    "capture": "existing smoke-all 180 frames, no input; exit 0 inferred from complete smoke summary, independently validated by repeated runs"
+  },
+  "witnesses": [
+    {
+      "frames": 180,
+      "audio_nonzero": 0,
+      "screen": "nonuniform",
+      "ppm_sha256": "0cff9cef72f66f7631ccea8c1bdc1b559de2148094a116d2f37a1f035af9e46f",
+      "errors": [],
+      "exit_code": 0,
+      "timed_out": false,
+      "game": "Bejeweled Twist",
+      "rom_filename": "Bejeweled Twist (Brazil) (Es,Pt).7z",
+      "rom_sha256": "b9fa949bff288dcc45b4849cc27561fee1c6146a7d82eb2b0cd32a97e571305a",
+      "source_log": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Bejeweled Twist.log",
+      "source_log_sha256": "a78d7cc990425ba7b9f4e766a84e0821293c857470f3f5f5f869ce73dba1dc33",
+      "source_frame": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Bejeweled Twist.ppm",
+      "source_frames": 180,
+      "snapshot_deterministic": false,
+      "validation": [
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010526Z-c53eb319\\report.json",
+          "ppm_sha256": "178ae2965b575d124f91f980b684fe2411c22adb14b019824708389f051dc849",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        },
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010625Z-8d0bd289\\report.json",
+          "ppm_sha256": "178ae2965b575d124f91f980b684fe2411c22adb14b019824708389f051dc849",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        }
+      ]
+    },
+    {
+      "frames": 180,
+      "audio_nonzero": 50528,
+      "screen": "nonuniform",
+      "ppm_sha256": "a6fe9989e8beb14583c2e26f0c1afff8fcaeed476fbde8844f38bc96e0d90f86",
+      "errors": [],
+      "exit_code": 0,
+      "timed_out": false,
+      "game": "Double Dragon",
+      "rom_filename": "Double Dragon (Brazil) (Es,Pt).7z",
+      "rom_sha256": "8d4d93b04e5eb325fff54ee09f60364b3a3bcc144dafd499d36d52070c654ac9",
+      "source_log": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Double Dragon.log",
+      "source_log_sha256": "3182eb83fb2267c89fb5facfbbee7ada299d2145fb59846e387f2e6b0f0e3aab",
+      "source_frame": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Double Dragon.ppm",
+      "source_frames": 180,
+      "snapshot_deterministic": true,
+      "validation": [
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010526Z-c53eb319\\report.json",
+          "ppm_sha256": "a6fe9989e8beb14583c2e26f0c1afff8fcaeed476fbde8844f38bc96e0d90f86",
+          "frames": 180,
+          "audio_nonzero": 50528,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        },
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010625Z-8d0bd289\\report.json",
+          "ppm_sha256": "a6fe9989e8beb14583c2e26f0c1afff8fcaeed476fbde8844f38bc96e0d90f86",
+          "frames": 180,
+          "audio_nonzero": 50528,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        }
+      ]
+    },
+    {
+      "frames": 180,
+      "audio_nonzero": 0,
+      "screen": "nonuniform",
+      "ppm_sha256": "0b760e59e61d85aceeed52877842c2280fe5ac9d0468d510f25c65f9c50aeb20",
+      "errors": [],
+      "exit_code": 0,
+      "timed_out": false,
+      "game": "Iron Sight",
+      "rom_filename": "Iron Sight (Brazil) (Es,Pt).7z",
+      "rom_sha256": "ee976ecc3b378f3a6bacfa7994d7305cf6ebf52ebf87dfd9608b4ae8ddbe170a",
+      "source_log": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Iron Sight.log",
+      "source_log_sha256": "98cc3cdfa92ce6fbec145f0c429a90a37fa039bd0d668b376f0049b66d43a2d6",
+      "source_frame": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Iron Sight.ppm",
+      "source_frames": 180,
+      "snapshot_deterministic": true,
+      "validation": [
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010526Z-c53eb319\\report.json",
+          "ppm_sha256": "0b760e59e61d85aceeed52877842c2280fe5ac9d0468d510f25c65f9c50aeb20",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        },
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010625Z-8d0bd289\\report.json",
+          "ppm_sha256": "0b760e59e61d85aceeed52877842c2280fe5ac9d0468d510f25c65f9c50aeb20",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        }
+      ]
+    },
+    {
+      "frames": 180,
+      "audio_nonzero": 6544,
+      "screen": "nonuniform",
+      "ppm_sha256": "9206bb21c33324c1fcb3d162b00e54a3b41e1704fa39779abe0ce0d40d94e28c",
+      "errors": [],
+      "exit_code": 0,
+      "timed_out": false,
+      "game": "Pac-Mania",
+      "rom_filename": "Pac-Mania (Brazil) (Es,Pt).7z",
+      "rom_sha256": "b450f4e84efd3fe4c7a2c1d7be516709ca7f9262840ed2bb1b8e2c5b20f8d5bf",
+      "source_log": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Pac-Mania.log",
+      "source_log_sha256": "6e8b14be24cc255f0ec138d82558d664afbda84cf912cd416b4001170fc5a8e4",
+      "source_frame": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Pac-Mania.ppm",
+      "source_frames": 180,
+      "snapshot_deterministic": true,
+      "validation": [
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010526Z-c53eb319\\report.json",
+          "ppm_sha256": "9206bb21c33324c1fcb3d162b00e54a3b41e1704fa39779abe0ce0d40d94e28c",
+          "frames": 180,
+          "audio_nonzero": 6544,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        },
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010625Z-8d0bd289\\report.json",
+          "ppm_sha256": "9206bb21c33324c1fcb3d162b00e54a3b41e1704fa39779abe0ce0d40d94e28c",
+          "frames": 180,
+          "audio_nonzero": 6544,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        }
+      ]
+    },
+    {
+      "frames": 180,
+      "audio_nonzero": 0,
+      "screen": "nonuniform",
+      "ppm_sha256": "aa5fc4771a4a4174f31032cfdd08eb8314d967d8c787e4c90c1b352d30f8ac0b",
+      "errors": [],
+      "exit_code": 0,
+      "timed_out": false,
+      "game": "Reckless Racing",
+      "rom_filename": "Reckless Racing (Brazil) (Es,Pt).7z",
+      "rom_sha256": "12acd46bb9e94f45358695aa2ffd074b8e5c16b2b8876337c1fd103311216961",
+      "source_log": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Reckless Racing.log",
+      "source_log_sha256": "101c68fc5e255bea924760d0052dc7b065b567fd652ceea4a119a5b3bf3711b5",
+      "source_frame": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Reckless Racing.ppm",
+      "source_frames": 180,
+      "snapshot_deterministic": true,
+      "validation": [
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010526Z-c53eb319\\report.json",
+          "ppm_sha256": "aa5fc4771a4a4174f31032cfdd08eb8314d967d8c787e4c90c1b352d30f8ac0b",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        },
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010625Z-8d0bd289\\report.json",
+          "ppm_sha256": "aa5fc4771a4a4174f31032cfdd08eb8314d967d8c787e4c90c1b352d30f8ac0b",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        }
+      ]
+    },
+    {
+      "frames": 180,
+      "audio_nonzero": 3902,
+      "screen": "nonuniform",
+      "ppm_sha256": "a769b716da718a1bd5b3b8e15ccad536b71947209e2235c14a2a6b2657451a42",
+      "errors": [],
+      "exit_code": 0,
+      "timed_out": false,
+      "game": "Um Jogo de Ovos",
+      "rom_filename": "Um Jogo de Ovos (Brazil) (Es,Pt).7z",
+      "rom_sha256": "806eaa9f8fbf3c3ed2ee25d625b7ac52f2c18a8056c4fa8e46934b61fe41fde5",
+      "source_log": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Um Jogo de Ovos.log",
+      "source_log_sha256": "73173f0c75a4b53a8ae947d7778efa45987059568aac53cf23678832ff7d201a",
+      "source_frame": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Um Jogo de Ovos.ppm",
+      "source_frames": 180,
+      "snapshot_deterministic": false,
+      "validation": [
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010526Z-c53eb319\\report.json",
+          "ppm_sha256": "beeca2d3da80d07e51dc70581fdae6ebbf1ee1b702480ff62a726593071261e2",
+          "frames": 180,
+          "audio_nonzero": 3902,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        },
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010625Z-8d0bd289\\report.json",
+          "ppm_sha256": "beeca2d3da80d07e51dc70581fdae6ebbf1ee1b702480ff62a726593071261e2",
+          "frames": 180,
+          "audio_nonzero": 3902,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        }
+      ]
+    },
+    {
+      "frames": 180,
+      "audio_nonzero": 0,
+      "screen": "nonuniform",
+      "ppm_sha256": "8799586ef7a71eae0ad22d37f26ed78a3bf7004f76ee93e061718f163a8ed6ce",
+      "errors": [],
+      "exit_code": 0,
+      "timed_out": false,
+      "game": "Zeebo Extreme Baja",
+      "rom_filename": "Zeebo Extreme Baja (Brazil) (Es,Pt).7z",
+      "rom_sha256": "ec7e12a65b9c9bf533f82b7f852e1b96597fcd4405d1065e3d22505bab9288d8",
+      "source_log": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Zeebo Extreme Baja.log",
+      "source_log_sha256": "593dadb47ed7de7393f344c9182a498757070510639a995c3748f0d0a50a958b",
+      "source_frame": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Zeebo Extreme Baja.ppm",
+      "source_frames": 180,
+      "snapshot_deterministic": true,
+      "validation": [
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010526Z-c53eb319\\report.json",
+          "ppm_sha256": "8799586ef7a71eae0ad22d37f26ed78a3bf7004f76ee93e061718f163a8ed6ce",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        },
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010625Z-8d0bd289\\report.json",
+          "ppm_sha256": "8799586ef7a71eae0ad22d37f26ed78a3bf7004f76ee93e061718f163a8ed6ce",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        }
+      ]
+    },
+    {
+      "frames": 180,
+      "audio_nonzero": 0,
+      "screen": "nonuniform",
+      "ppm_sha256": "8799586ef7a71eae0ad22d37f26ed78a3bf7004f76ee93e061718f163a8ed6ce",
+      "errors": [],
+      "exit_code": 0,
+      "timed_out": false,
+      "game": "Zeebo Extreme Boia Cross",
+      "rom_filename": "Zeebo Extreme Boia Cross (Brazil) (Es,Pt).7z",
+      "rom_sha256": "40926be47961b96c809149acea19e0f86dc82fa635660bb761ab1467b72962e6",
+      "source_log": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Zeebo Extreme Boia Cross.log",
+      "source_log_sha256": "664dcedf585cd2db888e27bddf18c6bcf61f3650fa77c683e98f92c200a7ed17",
+      "source_frame": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Zeebo Extreme Boia Cross.ppm",
+      "source_frames": 180,
+      "snapshot_deterministic": true,
+      "validation": [
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010526Z-c53eb319\\report.json",
+          "ppm_sha256": "8799586ef7a71eae0ad22d37f26ed78a3bf7004f76ee93e061718f163a8ed6ce",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        },
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010625Z-8d0bd289\\report.json",
+          "ppm_sha256": "8799586ef7a71eae0ad22d37f26ed78a3bf7004f76ee93e061718f163a8ed6ce",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        }
+      ]
+    },
+    {
+      "frames": 180,
+      "audio_nonzero": 0,
+      "screen": "nonuniform",
+      "ppm_sha256": "8799586ef7a71eae0ad22d37f26ed78a3bf7004f76ee93e061718f163a8ed6ce",
+      "errors": [],
+      "exit_code": 0,
+      "timed_out": false,
+      "game": "Zeebo Extreme Corrida Aerea",
+      "rom_filename": "Zeebo Extreme Corrida Aerea (Brazil) (Es,Pt).7z",
+      "rom_sha256": "fb5aa947d2e9b1796d8d237ef5f1ec4e58a4abb31b05e5b78ff59471426bef60",
+      "source_log": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Zeebo Extreme Corrida Aerea.log",
+      "source_log_sha256": "a38c621594b7d501d9469bd50a49ef9b7b560284572a0dd02f321b22f24a2b64",
+      "source_frame": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Zeebo Extreme Corrida Aerea.ppm",
+      "source_frames": 180,
+      "snapshot_deterministic": true,
+      "validation": [
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010526Z-c53eb319\\report.json",
+          "ppm_sha256": "8799586ef7a71eae0ad22d37f26ed78a3bf7004f76ee93e061718f163a8ed6ce",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        },
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010625Z-8d0bd289\\report.json",
+          "ppm_sha256": "8799586ef7a71eae0ad22d37f26ed78a3bf7004f76ee93e061718f163a8ed6ce",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        }
+      ]
+    },
+    {
+      "frames": 180,
+      "audio_nonzero": 0,
+      "screen": "nonuniform",
+      "ppm_sha256": "8799586ef7a71eae0ad22d37f26ed78a3bf7004f76ee93e061718f163a8ed6ce",
+      "errors": [],
+      "exit_code": 0,
+      "timed_out": false,
+      "game": "Zeebo Extreme Jetboard",
+      "rom_filename": "Zeebo Extreme Jetboard (Brazil) (Es,Pt).7z",
+      "rom_sha256": "db63acce036dbc97219ab8ebeb653d227d473289c7785954fa4bde5f11a1b21e",
+      "source_log": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Zeebo Extreme Jetboard.log",
+      "source_log_sha256": "ce769b86e7da8eab7b7154f73ca335bd69835dbc663cc08b64913c8543f95899",
+      "source_frame": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Zeebo Extreme Jetboard.ppm",
+      "source_frames": 180,
+      "snapshot_deterministic": true,
+      "validation": [
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010526Z-c53eb319\\report.json",
+          "ppm_sha256": "8799586ef7a71eae0ad22d37f26ed78a3bf7004f76ee93e061718f163a8ed6ce",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        },
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010625Z-8d0bd289\\report.json",
+          "ppm_sha256": "8799586ef7a71eae0ad22d37f26ed78a3bf7004f76ee93e061718f163a8ed6ce",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        }
+      ]
+    },
+    {
+      "frames": 180,
+      "audio_nonzero": 37884,
+      "screen": "nonuniform",
+      "ppm_sha256": "8799586ef7a71eae0ad22d37f26ed78a3bf7004f76ee93e061718f163a8ed6ce",
+      "errors": [],
+      "exit_code": 0,
+      "timed_out": false,
+      "game": "Zeebo Extreme Rolima",
+      "rom_filename": "Zeebo Extreme Rolima (Brazil) (Es,Pt).7z",
+      "rom_sha256": "4c2540268336aec6deff4a65bddc534325b1a09a5a7974ffa40df314b0100905",
+      "source_log": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Zeebo Extreme Rolima.log",
+      "source_log_sha256": "c9460ff5dbd42cd51a2592f5647c71ffa8ac4c9c5dc4fc15ba560cd2a7f45771",
+      "source_frame": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Zeebo Extreme Rolima.ppm",
+      "source_frames": 180,
+      "snapshot_deterministic": true,
+      "validation": [
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010526Z-c53eb319\\report.json",
+          "ppm_sha256": "8799586ef7a71eae0ad22d37f26ed78a3bf7004f76ee93e061718f163a8ed6ce",
+          "frames": 180,
+          "audio_nonzero": 37884,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        },
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010625Z-8d0bd289\\report.json",
+          "ppm_sha256": "8799586ef7a71eae0ad22d37f26ed78a3bf7004f76ee93e061718f163a8ed6ce",
+          "frames": 180,
+          "audio_nonzero": 37884,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        }
+      ]
+    },
+    {
+      "frames": 180,
+      "audio_nonzero": 0,
+      "screen": "nonuniform",
+      "ppm_sha256": "4c270029815b465b5dca3271c3db42a682bc190b797692e978b26b1d33d2676b",
+      "errors": [],
+      "exit_code": 0,
+      "timed_out": false,
+      "game": "Zeebo Family Pack",
+      "rom_filename": "Zeebo Family Pack (Brazil) (Es,Pt).7z",
+      "rom_sha256": "79703d242c0ac26bb078dbadf26b17d761901917fe4f512505ef58af5c239ece",
+      "source_log": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Zeebo Family Pack.log",
+      "source_log_sha256": "832b9296ead7b096b581b561726201c4d5550e0cb39fae7ed375ffc2db10158f",
+      "source_frame": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Zeebo Family Pack.ppm",
+      "source_frames": 180,
+      "snapshot_deterministic": true,
+      "validation": [
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010526Z-c53eb319\\report.json",
+          "ppm_sha256": "4c270029815b465b5dca3271c3db42a682bc190b797692e978b26b1d33d2676b",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        },
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010625Z-8d0bd289\\report.json",
+          "ppm_sha256": "4c270029815b465b5dca3271c3db42a682bc190b797692e978b26b1d33d2676b",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        }
+      ]
+    },
+    {
+      "frames": 180,
+      "audio_nonzero": 0,
+      "screen": "nonuniform",
+      "ppm_sha256": "f9c1a3c3815bda267eca07ce1a890dfcc4aea99b32244d98610f5e68f1a6f8ad",
+      "errors": [],
+      "exit_code": 0,
+      "timed_out": false,
+      "game": "Zuma's Revenge",
+      "rom_filename": "Zuma's Revenge (Brazil) (Es,Pt).7z",
+      "rom_sha256": "aed676aa40340c4ba546aa518ffc7c8798c510664a1733492cd533678e577464",
+      "source_log": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Zuma's Revenge.log",
+      "source_log_sha256": "8459bae92bbf68dca51de603f481e14779cafffbe642fb20762cdfcd8911a07d",
+      "source_frame": "C:\\Users\\Lucas\\source\\repos\\zeebo_libretro\\artifacts\\smoke-all\\Zuma's Revenge.ppm",
+      "source_frames": 180,
+      "snapshot_deterministic": false,
+      "validation": [
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010526Z-c53eb319\\report.json",
+          "ppm_sha256": "d1284c260cca75c6cd22af9187394ce7043647513cd23975bba6512b43541695",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        },
+        {
+          "report": "C:\\Users\\Lucas\\AppData\\Local\\Temp\\opencode\\zeebo-catalog-regression\\artifacts\\capability-gate\\20261108T010625Z-8d0bd289\\report.json",
+          "ppm_sha256": "d1284c260cca75c6cd22af9187394ce7043647513cd23975bba6512b43541695",
+          "frames": 180,
+          "audio_nonzero": 0,
+          "exit_code": 0,
+          "screen": "nonuniform"
+        }
+      ]
+    }
+  ]
+}
