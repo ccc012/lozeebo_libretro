@@ -1,14 +1,18 @@
 {
-  "mod": "D:\\Temp\\zeebo_all\\Zeebo_Family_Pack__Brazil___Es_Pt_\\mod\\277229\\game.mod",
-  "frames": 900,
-  "seq": "A:240:10,A:300:10,RIGHT:420:120,LEFT:570:120,A:720:60",
-  "proven_at": "9e21101",
-  "elapsed_ms_baseline": 19300,
-  "elapsed_ms_max": 45000,
-  "video_varied": 1,
-  "audio_nonzero_min": 500000,
-  "audio_nonzero_baseline": 927840,
-  "ppm_sha256": "DC43FEA183E9930E6C6C24F1012680CBCC9CBD754CEFDA39BE98A31F258947C0",
-  "max_seconds": 240,
-  "fail_log_patterns": ["INVALID", "STACK overflow", "descarril"]
+    "mod":  "D:\\Temp\\zeebo_all\\Zeebo_Family_Pack__Brazil___Es_Pt_\\mod\\277229\\game.mod",
+    "frames":  900,
+    "seq":  "A:240:10,A:300:10,RIGHT:420:120,LEFT:570:120,A:720:60",
+    "proven_at":  "9e21101",
+    "elapsed_ms_baseline":  19300,
+    "elapsed_ms_max":  45000,
+    "video_varied":  1,
+    "audio_nonzero_min":  500000,
+    "audio_nonzero_baseline":  927840,
+    "ppm_sha256":  "F7202F41BA860A0E8ABFE83977B0D85C91F72E23209B79CB0D584752ECF352D6",
+    "max_seconds":  240,
+    "fail_log_patterns":  [
+                              "INVALID",
+                              "STACK overflow",
+                              "descarril"
+                          ]
 }
