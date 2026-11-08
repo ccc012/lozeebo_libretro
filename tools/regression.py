@@ -72,6 +72,7 @@ def main():
             return 1
         if not check('build', ['cmake', '--build', build, '--config', 'Release'], 600):
             return 1
+    check('cpu-hle-probe', [sys.executable, ROOT / 'tests/hle_probe_cost.py', build])
     for name in ('check-content-packages', 'check-content-frontend'):
         check(name, [sys.executable, ROOT / 'tests' / (name + '.py')], 480)
     check('capability-comparator', [sys.executable, ROOT / 'tools/capability-gate/test_comparator.py'])
@@ -86,6 +87,8 @@ def main():
                      '-BuildDir', args.build_dir, '-SkipBuild'], 480)
     check('dd-directions', ['powershell', '-NoProfile', '-File', ROOT / 'tools/dd-gate/check-directions.ps1',
                             '-BuildDir', args.build_dir])
+    check('dd-stage-gameplay', [sys.executable, ROOT / 'tools/dd-gate/gameplay.py',
+                                '--build-dir', build, '--output', out / 'dd-gameplay'])
     fp = r'D:\Temp\zeebo_all\Zeebo_Family_Pack__Brazil___Es_Pt_\mod\277229\game.mod'
     check('fp-neutral-rearm', [sys.executable, '-u', ROOT / 'tests/fp_position_transitions.py',
                                release / 'lozeebo_libretro.dll', fp])
