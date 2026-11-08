@@ -1,0 +1,1 @@
+$(cat "C:\Users\Lucas\AppData\Local\Temp\opencode\progress-fp-gameplay\PROGRESS_FP_HANDOFF.md")
