@@ -2,6 +2,7 @@
 Windows + installed 7-Zip. Fixtures stay inside this worktree's artifacts.
 """
 import hashlib
+import os
 from pathlib import Path
 import shutil
 import stat
@@ -10,7 +11,7 @@ import time
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-PROBE = ROOT / 'build-content/Release/content_package_check.exe'
+PROBE = Path(os.environ.get('ZEEBO_TEST_BUILD_DIR', str(ROOT / 'build-content'))) / 'Release/content_package_check.exe'
 FIXTURES = ROOT / 'artifacts/content-packages'
 FIXTURES.mkdir(parents=True, exist_ok=True)
 

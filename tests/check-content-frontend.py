@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 
 root = Path(__file__).resolve().parents[1]
-build = root / 'build-content/Release'
+build = Path(os.environ.get('ZEEBO_TEST_BUILD_DIR', str(root / 'build-content'))) / 'Release'
 out = root / 'artifacts/content-packages'
 out.mkdir(parents=True, exist_ok=True)
 package = r'D:\Games\Zeebo - Zeebo\Zeebo Family Pack (Brazil) (Es,Pt).7z'
