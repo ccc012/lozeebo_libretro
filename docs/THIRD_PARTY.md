@@ -1,4 +1,25 @@
+> **Ressalva de encerramento (2026-11-12):** o Git atual contém referências e assets descritos abaixo como locais/não commitados, além de MODs comerciais em 	ests/roms. Essas afirmações históricas não comprovam o estado atual. Não redistribuir sem revisão; consulte [ENCERRAMENTO.md](ENCERRAMENTO.md#bloqueio-antes-de-publicação).
+
 # Third-Party and Reuse Notes
+
+## Checkout organizado — 2026-11-12
+
+As árvores `reference/` e ROMs comerciais saíram do checkout; commits antigos continuam contendo material externo. As declarações históricas de nunca versionado/nunca enviado abaixo não foram verificadas e não substituem revisão do histórico. `preservacao/` é privada e pode conter análise derivada de binários; não publicar automaticamente.
+
+Dependências incorporadas efetivamente presentes, sem alteração de versão nesta organização:
+
+| Arquivos | Avisos incluídos / observações |
+|---|---|
+| `src/audio/miniz*` | Distribuição miniz; avisos MIT nos fontes e notas históricas nos headers. Apenas `miniz_tinfl.c` é compilado; headers possuem dependências entre si. Notices originais preservados. |
+| `src/audio/extern/drmp3/dr_mp3.h` | Opções domínio público/MIT-0 no próprio header. |
+| `src/audio/extern/tinysoundfont/tsf.h` | MIT, com atribuição SFZero no header. |
+| `src/audio/extern/tinysoundfont/tml.h` | zlib; não presumir a mesma licença de `tsf.h`. |
+| `src/core/libretro.h` | MIT no próprio header. |
+| `src/extern/stb/stb_image.h` | Header recuperado sem mudança de versão do arquivo anteriormente versionado em `reference/zeemu-main/zeemu-main/third_party/stb_image.h`; opções MIT/domínio público e notices preservados no próprio arquivo. Consumido por `iimage.c`; não é jogo nem depende da árvore Zeemu. |
+
+Ferramentas locais: Python, PowerShell, CMake, compilador C, 7-Zip para determinados pacotes; `tools/summarize-survey.py` requer Pillow. Não foi instalada nova dependência.
+
+## Registro histórico de referências
 
 This project is being documented as GPLv3.
 

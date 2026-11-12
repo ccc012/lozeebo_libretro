@@ -1,3 +1,9 @@
+> **Entrada vigente:** [ORGANIZACAO.md](ORGANIZACAO.md), mapa da raiz aos arquivos internos.
+
+> **Estrutura mais recente:** [LIMPEZA_FINAL.md](LIMPEZA_FINAL.md). Snapshots, ROMs e capturas volumosas excluídos após preservação seletiva.
+
+> **Projeto encerrado em 2026-11-12.** [Registro final](ENCERRAMENTO.md) · [Catálogo completo](CATALOGO_ENCERRAMENTO.md). Classificações antigas de estado atual são históricas.
+
 # Índice da documentação
 
 Documentos refletem épocas diferentes. Evidência datada permanece histórica; não interpretar como estado atual.
@@ -49,4 +55,10 @@ Documentos refletem épocas diferentes. Evidência datada permanece histórica; 
 - [`REGRESSION_060942_FIX.md`](REGRESSION_060942_FIX.md)
 - [`REGRESSION_172840_TRIAGE.md`](REGRESSION_172840_TRIAGE.md)
 
-Documentos operacionais de rodadas permanecem na raiz por preservação de links. Consulte a classificação completa na auditoria.
+## Documentos históricos arquivados
+
+- [`historico/raiz/`](historico/raiz/) — Análises, status de rodadas, prompts e planos operacionais que estavam na raiz.
+- [`historico/agent-coord/`](historico/agent-coord/) — Histórico completo de coordenação multiagente e handoffs.
+- [`../tools/legado/`](../tools/legado/) — Scripts antigos e builds legados (Makefile e Visual Studio).
+
+Consulte o catálogo completo em [`CATALOGO_ENCERRAMENTO.md`](CATALOGO_ENCERRAMENTO.md) e o mapa detalhado em [`ORGANIZACAO.md`](ORGANIZACAO.md). Para o acervo documental completo com notas unificadas, consulte o vault Obsidian em `G:\Meu Drive\Documentos obi\Projeto\Emulador`.

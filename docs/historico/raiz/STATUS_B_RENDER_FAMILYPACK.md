@@ -1,9 +1,9 @@
 # STATUS B - Render Family Pack
 
 Resumo curto:
-- Corrigi a validação de ponteiros de vértice em `src/gpu/egl_gl.c` para respeitar o mapa real de memória do Zeebo.
+- Corrigi a validaï¿½ï¿½o de ponteiros de vï¿½rtice em `src/gpu/egl_gl.c` para respeitar o mapa real de memï¿½ria do Zeebo.
 - O Family Pack agora passa por `glVertexPointer` usando enderecos heap validos como `0x10011CF4` e `0x10011D24`.
-- O teste de fumaça confirma renderizacao ativa com `DrawArrays` e frame produzido.
+- O teste de fumaï¿½a confirma renderizacao ativa com `DrawArrays` e frame produzido.
 
 O que mudei:
 - `decode_vertex_ptr()` agora aceita RAM, heap, stack e VRAM.
@@ -21,4 +21,4 @@ Evidencia do teste:
 Resultado:
 - O jogo continua rodando e desenhando.
 - O bug de rejeitar ponteiros heap reais foi removido.
-- O frame ainda parece depender de mais ajustes de conteúdo/recursos, mas o bloqueio principal do ponteiro de vértice foi corrigido.
+- O frame ainda parece depender de mais ajustes de conteï¿½do/recursos, mas o bloqueio principal do ponteiro de vï¿½rtice foi corrigido.

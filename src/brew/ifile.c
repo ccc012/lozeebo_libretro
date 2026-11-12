@@ -21,6 +21,7 @@
 #include "../memory/memory.h"
 #include "../debug/log.h"
 #include "../audio/miniz_tinfl.h"
+#include "../loader/pakz.h"
 
 #define ZFILE_MAX 16
 #define ZIFILE_POOL 64
@@ -422,6 +423,100 @@ static int vfs_find(const char *name) {
     return -1;
 }
 
+/* ------------------------------------------------------------------ *
+ * Container "PACK" (.pakz): arquivos do Zeebo Extreme etc.
+ * O parsing do formato fica em src/loader/pakz.c; aqui apenas montamos
+ * a lista de arquivos .pakz do jogo e resolvemos membros por nome.
+ * ------------------------------------------------------------------ */
+#define ZPAKZ_MAX_FILES 16
+static pakz_t *g_pakz_arch[ZPAKZ_MAX_FILES];
+static int g_pakz_narch = 0;
+static int g_pakz_loaded = 0;
+
+static void pakz_add_file(const char *path) {
+    pakz_t *p;
+    if (!path || !path[0]) return;
+    if (g_pakz_narch >= ZPAKZ_MAX_FILES) return;
+    p = pakz_open(path);
+    if (!p) return;
+    g_pakz_arch[g_pakz_narch++] = p;
+    LOGI("PAKZ: %s -> %d membros", path, pakz_count(p));
+}
+
+static void pakz_scan_dir(const char *dir) {
+    if (!dir || !dir[0]) return;
+#if defined(_WIN32)
+    {
+        WIN32_FIND_DATAA fd;
+        HANDLE h;
+        char mask[ZPATH_MAX + 64];
+        snprintf(mask, sizeof(mask), "%s/*.pakz", dir);
+        h = FindFirstFileA(mask, &fd);
+        if (h == INVALID_HANDLE_VALUE) return;
+        do {
+            char full[ZPATH_MAX + 300];
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            snprintf(full, sizeof(full), "%s/%s", dir, fd.cFileName);
+            pakz_add_file(full);
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+#else
+    {
+        DIR *d = opendir(dir);
+        struct dirent *de;
+        if (!d) return;
+        while ((de = readdir(d)) != NULL) {
+            size_t len = strlen(de->d_name);
+            char full[ZPATH_MAX + 300];
+            if (len < 5) continue;
+            if (tolower((unsigned char)de->d_name[len - 5]) != '.' ||
+                tolower((unsigned char)de->d_name[len - 4]) != 'p' ||
+                tolower((unsigned char)de->d_name[len - 3]) != 'a' ||
+                tolower((unsigned char)de->d_name[len - 2]) != 'k' ||
+                tolower((unsigned char)de->d_name[len - 1]) != 'z')
+                continue;
+            snprintf(full, sizeof(full), "%s/%s", dir, de->d_name);
+            pakz_add_file(full);
+        }
+        closedir(d);
+    }
+#endif
+}
+
+static void pakz_load(void) {
+    const char *md;
+    if (g_pakz_loaded) return;
+    g_pakz_loaded = 1;
+    md = zbrew_get_mod_dir();
+    pakz_scan_dir(md);
+    if (!md || strcmp(md, g_base_dir) != 0)
+        pakz_scan_dir(g_base_dir);
+}
+
+static pakz_t *pakz_lookup(const char *name, int *member) {
+    int i, idx;
+    if (member) *member = -1;
+    if (!name || !name[0]) return NULL;
+    pakz_load();
+    for (i = 0; i < g_pakz_narch; i++) {
+        idx = pakz_find(g_pakz_arch[i], name);
+        if (idx >= 0) {
+            if (member) *member = idx;
+            return g_pakz_arch[i];
+        }
+    }
+    return NULL;
+}
+
+static void pakz_reset(void) {
+    int i;
+    for (i = 0; i < g_pakz_narch; i++)
+        if (g_pakz_arch[i]) pakz_close(g_pakz_arch[i]);
+    g_pakz_narch = 0;
+    g_pakz_loaded = 0;
+}
+
 static uint32_t ggz_be32(const uint8_t *p) {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
            ((uint32_t)p[2] << 8) | p[3];
@@ -724,6 +819,7 @@ void zbrew_ifile_reset(void) {
     memset(g_ifile_slot, 0, sizeof(g_ifile_slot));
     memset(g_ifile_refs, 0, sizeof(g_ifile_refs));
     g_ifile_vtbl = 0;
+    pakz_reset();
 }
 
 void zbrew_set_file_base(const char *dir) {
@@ -883,6 +979,8 @@ int zbrew_read_asset(const char *name, uint8_t **out, uint32_t *out_size) {
     uint8_t *buf = NULL;
     uint32_t size = 0;
     int vi;
+    int pi;
+    pakz_t *pa;
 
     if (!out || !out_size) return 0;
     *out = NULL;
@@ -923,6 +1021,22 @@ int zbrew_read_asset(const char *name, uint8_t **out, uint32_t *out_size) {
                     size = 0;
                 }
             }
+        } else if ((pa = pakz_lookup(name, &pi)) != NULL) {
+            uint32_t poff = 0;
+            pakz_member(pa, pi, &poff, &size);
+            if (size) {
+                buf = (uint8_t *)malloc(size);
+                if (buf) {
+                    if (pakz_read(pa, pi, 0, buf, size) != size) {
+                        free(buf); buf = NULL; size = 0;
+                    } else {
+                        LOGI("asset: '%s' -> %u bytes (PAKZ)", name, size);
+                    }
+                } else {
+                    size = 0;
+                }
+            }
+            (void)poff;
         }
     }
 
@@ -1074,6 +1188,8 @@ void zbrew_handle_file(uint32_t id) {
         if (!g_handles[slot]) {
             /* fallback: membro do container VFS do Zeebo (data.vfs) */
             int vi = vfs_find(name);
+            int pi;
+            pakz_t *pa;
             if (vi >= 0 && g_vfs_file) {
                 g_ggz[slot].active = 1;
                 g_ggz[slot].vfs = 1;
@@ -1087,6 +1203,20 @@ void zbrew_handle_file(uint32_t id) {
                 LOGD("IFileMgr_OpenFile('%s') -> membro VFS 0x%08X "
                      "(off=%u size=%u)", name, g_vfs_toc[vi].hash,
                      g_vfs_toc[vi].off, g_vfs_toc[vi].size);
+            } else if ((pa = pakz_lookup(name, &pi)) != NULL) {
+                uint32_t poff = 0, psize = 0;
+                pakz_member(pa, pi, &poff, &psize);
+                g_ggz[slot].active = 1;
+                g_ggz[slot].vfs = 1;
+                g_ggz[slot].host = pakz_host(pa);
+                g_ggz[slot].off = poff;
+                g_ggz[slot].total = psize;
+                g_ggz[slot].pos = 0;
+                g_ggz[slot].toc = NULL;
+                g_ggz[slot].m = NULL;
+                g_ggz[slot].nm = 0;
+                LOGD("IFileMgr_OpenFile('%s') -> membro PAKZ (off=%u size=%u)",
+                     name, poff, psize);
             } else {
                 LOGD("IFileMgr_OpenFile: '%s' (modo 0x%X) nao encontrado",
                      name, mode);
@@ -1158,8 +1288,14 @@ void zbrew_handle_file(uint32_t id) {
         }
         {
             FILE *f = fopen(path, "rb");
-            if (f) { fclose(f); g_cpu.r[0] = ZBREW_SUCCESS; }
-            else   g_cpu.r[0] = ZBREW_EFAILED;
+            if (f) {
+                fclose(f);
+                g_cpu.r[0] = ZBREW_SUCCESS;
+            } else if (vfs_find(name) >= 0 || pakz_lookup(name, NULL) != NULL) {
+                g_cpu.r[0] = ZBREW_SUCCESS;
+            } else {
+                g_cpu.r[0] = ZBREW_EFAILED;
+            }
         }
         break;
     }

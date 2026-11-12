@@ -20,6 +20,6 @@
 
 - Se a meta for evitar que timers mantenham a CPU parada para sempre quando o jogo espera callbacks, o ajuste mais seguro é permitir que o loop continue processando timer expirados e reavalie o estado antes de retornar de `retro_run()`.
 - Código relacionado:
-  - [`src/core/libretro_core.c`](C:/Users/Lucas/source/repos/zeebo_libretro/src/core/libretro_core.c)
+  - [`src/core/libretro_core.c`](../../../src/core/libretro_core.c)
   - linhas aproximadas `420-445`
 

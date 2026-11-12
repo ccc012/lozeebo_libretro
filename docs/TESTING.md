@@ -1,3 +1,5 @@
+> **Receita histórica.** Comandos atuais e testes efetivamente executados no encerramento: [ENCERRAMENTO.md](ENCERRAMENTO.md). Suíte existente: [tools/REGRESSION.md](../tools/REGRESSION.md).
+
 # Guia de Testes — Zeebo LibRetro Core
 
 Este documento substitui `TESTE_AVANCADO.md` e `TESTE_RETROARCH.md` (removidos). Reflete o

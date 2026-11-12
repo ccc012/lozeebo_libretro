@@ -56,8 +56,8 @@ partir do `master` **antes** da integração das tarefas A-E (baseline "pré-rod
 já que os fixes desta rodada tratam de bloqueios pós-boot (signals/IDisplay/input),
 não dos bloqueios de CLSID/scatter-load que dominam esta varredura — não esperado
 (e não observado) impacto desta rodada nesses 52 jogos. Script:
-[`sweep_68_games.ps1`](sweep_68_games.ps1), resultado bruto:
-[`sweep_result.csv`](sweep_result.csv).
+[`sweep_68_games.ps1`](../../../tools/legado/scripts/sweep_68_games.ps1), resultado bruto:
+[`sweep_result.csv`](../../../preservacao/levantamento/sweep_result_raiz.csv).
 
 ### Resumo por categoria
 
@@ -150,7 +150,7 @@ numa Rodada 6, junto com o pacote de 13 jogos do bug `0x12000000`.
 
 CSV completo com os 62 jogos (id, arquivo, classificação, endereço de crash quando
 aplicável, cor do primeiro pixel, contagem de instruções):
-[`sweep_result.csv`](sweep_result.csv).
+[`sweep_result.csv`](../../../preservacao/levantamento/sweep_result_raiz.csv).
 
 ---
 

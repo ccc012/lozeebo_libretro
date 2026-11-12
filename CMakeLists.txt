@@ -47,6 +47,7 @@ set(ZEEBO_CORE_SOURCES
     src/loader/bar_parser.c
     src/loader/mif_parser.c
     src/loader/mod_loader.c
+    src/loader/pakz.c
     src/loader/zip_extract.c
     src/memory/heap.c
     src/memory/memory.c
@@ -136,6 +137,8 @@ if(ZEEBO_BUILD_SMOKE_TEST AND NOT ZEEBO_PLATFORM_CONSOLE)
     endif()
     add_executable(audio_adpcm_rate tests/audio_adpcm_rate.c
         src/audio/audio.c src/audio/mixer.c src/audio/pcm.c src/audio/adpcm.c)
+    add_executable(pakz_reader tests/pakz_reader.c src/loader/pakz.c)
+    target_include_directories(pakz_reader PRIVATE src)
     set(INPUT_TEST_SOURCES ${ZEEBO_CORE_SOURCES})
     list(REMOVE_ITEM INPUT_TEST_SOURCES src/brew/boot.c)
     add_executable(input_transitions tests/input_transitions.c ${INPUT_TEST_SOURCES})

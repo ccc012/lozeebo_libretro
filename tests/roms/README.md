@@ -1,29 +1,7 @@
-# ZEEBO ROMS - Referência Externa
+# Fixtures de teste
 
-O projeto zeebo_libretro agora usa ROMs da pasta externa:
-```
-C:\Users\Lucas\Downloads\zeebo-romset-and-devtools
-```
+Somente a fixture sintética `test_draw.mod` é mantida nesta pasta. Os quatro MODs comerciais anteriormente versionados foram removidos do checkout na limpeza final.
 
-## Como testar com RetroArch:
+Não adicione ROMs comerciais, romsets, extrações ou arquivos de jogos. Testes que precisam de jogos dependem de fixtures externas obtidas legitimamente e caminhos configurados no ambiente local.
 
-1. **Copiar DLL:**
-```powershell
-Copy-Item x64/Release/zeebo_libretro.dll `
-  -Destination "C:\Program Files (x86)\Steam\steamapps\common\RetroArch\cores\"
-```
-
-2. **Carregar jogo:**
-   - Load Core → Zeebo
-   - Load Content → Selecione em Downloads/zeebo-romset-and-devtools
-
-## Jogos Prioridade 🎯
-
-- **276212** - Pac-Mania (CreateInstance crash)
-- **277229** - Zeebo Family Pack (rasterizador)
-- **274754** - Double Dragon (raw MOD)
-- **279382** - Zeeboids (CLSID?)
-
-## 68 Jogos Disponíveis
-
-Ver lista completa em Downloads/zeebo-romset-and-devtools/readme.nfo
+A remoção do checkout não limpa commits antigos. Consulte `docs/LIMPEZA_FINAL.md` antes de publicar este histórico.

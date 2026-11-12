@@ -30,7 +30,7 @@
 
 /* stb_image - decodificador de imagem (public domain/MIT) */
 #define STB_IMAGE_IMPLEMENTATION
-#include "../../reference/zeemu-main/zeemu-main/third_party/stb_image.h"
+#include "../extern/stb/stb_image.h"
 
 /* =========================================================================
  * Cache de imagens decodificadas (fnv1a64)
